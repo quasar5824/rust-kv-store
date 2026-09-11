@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 enum Command {
     Set { key: String, value: String },
+    Delete { key: String },
 }
 
 pub struct KvStore {
@@ -27,6 +28,9 @@ impl KvStore {
                         Command::Set { key, value } => {
                             data.insert(key, value);
                         }
+                        Command::Delete { key } => {
+                            data.remove(&key);
+                        }
                     }
                 }
             }
@@ -43,7 +47,7 @@ impl KvStore {
         })
     }
 
-    pub fn set(&mut self, key: &str, value: &str) -> io::Result<() {
+    pub fn set(&mut self, key: &str, value: &str) -> io::Result<()> {
         let cmd = Command::Set {
             key: key.to_string(),
             value: value.to_string(),
@@ -55,6 +59,20 @@ impl KvStore {
         self.log.flush()?;
 
         self.data.insert(key.to_string(), value.to_string());
+        Ok(())
+    }
+
+    pub fn delete(&mut self, key: &str) -> io::Result<()> {
+        let cmd = Command::Delete {
+            key: key.to_string(),
+        };
+        let serialized = serde_json::to_string(&cmd).unwrap();
+
+        self.log.write_all(serialized.as_bytes())?;
+        self.log.write_all(b"\n")?;
+        self.log.flush()?;
+
+        self.data.remove(key);
         Ok(())
     }
 
