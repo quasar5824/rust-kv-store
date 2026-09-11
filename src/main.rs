@@ -6,23 +6,26 @@ fn main() {
     let path = "store.db";
     let mut store = KvStore::open(path).expect("Failed to open store");
 
-    let key = "greeting";
-    let value = "Hello, Rust KV Store!";
+    let key1 = "greeting";
+    let value1 = "Hello, Rust KV Store!";
+    let key2 = "version";
+    let value2 = "1.0.0";
 
-    store.set(key, value).expect("Failed to set value");
-    println!("Set {} = {}", key, value);
+    store.set(key1, value1).expect("Failed to set value");
+    store.set(key2, value2).expect("Failed to set value");
+    println!("Set values for {} and {}", key1, key2);
 
-    match store.get(key) {
-        Some(val) => println!("Get {}: {}", key, val),
-        None => println!("Key not found"),
+    println!("Current store contents:");
+    for (k, v) in store.get_all() {
+        println!("  {}: {}", k, v);
     }
 
-    println!("Deleting key: {}", key);
-    store.delete(key).expect("Failed to delete key");
+    println!("Deleting key: {}", key1);
+    store.delete(key1).expect("Failed to delete key");
 
-    match store.get(key) {
-        Some(val) => println!("Get {}: {}", key, val),
-        None => println!("Get {}: Key not found (as expected)", key),
+    println!("Store contents after deletion:");
+    for (k, v) in store.get_all() {
+        println!("  {}: {}", k, v);
     }
 
     let missing = "nonexistent";

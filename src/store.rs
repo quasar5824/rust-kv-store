@@ -79,4 +79,8 @@ impl KvStore {
     pub fn get(&self, key: &str) -> Option<&String> {
         self.data.get(key)
     }
+
+    pub fn get_all(&self) -> Vec<(&String, &String)> {
+        self.data.iter().collect()
+    }
 }
