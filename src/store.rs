@@ -12,6 +12,7 @@ enum Command {
 pub struct KvStore {
     data: HashMap<String, String>,
     log: File,
+    path: String,
 }
 
 impl KvStore {
@@ -44,6 +45,7 @@ impl KvStore {
         Ok(KvStore {
             data,
             log,
+            path: path.to_string(),
         })
     }
 
@@ -82,5 +84,27 @@ impl KvStore {
 
     pub fn get_all(&self) -> Vec<(&String, &String)> {
         self.data.iter().collect()
+    }
+
+    pub fn compact(&mut self) -> io::Result<()> {
+        let mut new_log = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&self.path)?;
+
+        for (key, value) in &self.data {
+            let cmd = Command::Set {
+                key: key.clone(),
+                value: value.clone(),
+            };
+            let serialized = serde_json::to_string(&cmd).unwrap();
+            new_log.write_all(serialized.as_bytes())?;
+            new_log.write_all(b"\n")?;
+        }
+        new_log.flush()?;
+        
+        self.log = new_log;
+        Ok(())
     }
 }

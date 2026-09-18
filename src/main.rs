@@ -23,7 +23,10 @@ fn main() {
     println!("Deleting key: {}", key1);
     store.delete(key1).expect("Failed to delete key");
 
-    println!("Store contents after deletion:");
+    println!("Compacting log...");
+    store.compact().expect("Failed to compact store");
+
+    println!("Store contents after deletion and compaction:");
     for (k, v) in store.get_all() {
         println!("  {}: {}", k, v);
     }
