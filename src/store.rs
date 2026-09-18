@@ -4,7 +4,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-enum Command {
+pub enum Command {
     Set { key: String, value: String },
     Delete { key: String },
 }
@@ -50,31 +50,31 @@ impl KvStore {
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> io::Result<()> {
-        let cmd = Command::Set {
-            key: key.to_string(),
-            value: value.to_string(),
-        };
-        let serialized = serde_json::to_string(&cmd).unwrap();
-        
-        self.log.write_all(serialized.as_bytes())?;
-        self.log.write_all(b"\n")?;
-        self.log.flush()?;
-
-        self.data.insert(key.to_string(), value.to_string());
-        Ok(())
+        self.batch(vec![Command::Set { key: key.to_string(), value: value.to_string() }])
     }
 
     pub fn delete(&mut self, key: &str) -> io::Result<()> {
-        let cmd = Command::Delete {
-            key: key.to_string(),
-        };
-        let serialized = serde_json::to_string(&cmd).unwrap();
+        self.batch(vec![Command::Delete { key: key.to_string() }])
+    }
 
-        self.log.write_all(serialized.as_bytes())?;
-        self.log.write_all(b"\n")?;
+    pub fn batch(&mut self, commands: Vec<Command>) -> io::Result<()> {
+        for cmd in &commands {
+            let serialized = serde_json::to_string(cmd).unwrap();
+            self.log.write_all(serialized.as_bytes())?;
+            self.log.write_all(b"\n")?;
+        }
         self.log.flush()?;
 
-        self.data.remove(key);
+        for cmd in commands {
+            match cmd {
+                Command::Set { key, value } => {
+                    self.data.insert(key, value);
+                }
+                Command::Delete { key } => {
+                    self.data.remove(&key);
+                }
+            }
+        }
         Ok(())
     }
 

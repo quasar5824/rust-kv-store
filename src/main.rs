@@ -1,6 +1,6 @@
 mod store;
 
-use store::KvStore;
+use store::{KvStore, Command};
 
 fn main() {
     let path = "store.db";
@@ -17,6 +17,14 @@ fn main() {
     store.set(key2, value2).expect("Failed to set value");
     store.set(key3, value3).expect("Failed to set value");
     println!("Set values for {}, {}, and {}", key1, key2, key3);
+
+    println!("\nPerforming batch update...");
+    let batch = vec![
+        Command::Set { key: "user:3".to_string(), value: "Charlie".to_string() },
+        Command::Set { key: "user:4".to_string(), value: "Dave".to_string() },
+        Command::Delete { key: "config:version".to_string() },
+    ];
+    store.batch(batch).expect("Failed to execute batch");
 
     println!("\nScanning for keys starting with 'user:':");
     for (k, v) in store.scan("user:") {
