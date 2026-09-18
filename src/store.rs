@@ -86,6 +86,13 @@ impl KvStore {
         self.data.iter().collect()
     }
 
+    pub fn scan(&self, prefix: &str) -> Vec<(&String, &String)> {
+        self.data
+            .iter()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .collect()
+    }
+
     pub fn compact(&mut self) -> io::Result<()> {
         let mut new_log = OpenOptions::new()
             .create(true)
