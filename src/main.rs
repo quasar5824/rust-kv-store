@@ -31,6 +31,13 @@ fn main() {
         println!("  {}: {}", k, v);
     }
 
+    println!("\nUpdating key: {}", key2);
+    if store.update(key2, "Bobby").expect("Failed to update") {
+        println!("Successfully updated {} to Bobby", key2);
+    } else {
+        println!("Key {} not found for update", key2);
+    }
+
     println!("\nDeleting key: {}", key1);
     store.delete(key1).expect("Failed to delete key");
 

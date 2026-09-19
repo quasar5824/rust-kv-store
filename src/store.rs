@@ -53,6 +53,14 @@ impl KvStore {
         self.batch(vec![Command::Set { key: key.to_string(), value: value.to_string() }])
     }
 
+    pub fn update(&mut self, key: &str, value: &str) -> io::Result<bool> {
+        if !self.exists(key) {
+            return Ok(false);
+        }
+        self.set(key, value)?;
+        Ok(true)
+    }
+
     pub fn delete(&mut self, key: &str) -> io::Result<()> {
         self.batch(vec![Command::Delete { key: key.to_string() }])
     }
