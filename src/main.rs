@@ -44,4 +44,6 @@ fn main() {
 
     let missing = "nonexistent";
     println!("Get {}: {:?}", missing, store.get(missing));
+    println!("Exists {}: {}", missing, store.exists(missing));
+    println!("Exists {}: {}", "user:2", store.exists("user:2"));
 }

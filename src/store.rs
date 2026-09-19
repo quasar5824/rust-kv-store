@@ -82,6 +82,10 @@ impl KvStore {
         self.data.get(key)
     }
 
+    pub fn exists(&self, key: &str) -> bool {
+        self.data.contains_key(key)
+    }
+
     pub fn get_all(&self) -> Vec<(&String, &String)> {
         self.data.iter().collect()
     }
