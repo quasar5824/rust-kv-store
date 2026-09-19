@@ -105,6 +105,16 @@ impl KvStore {
             .collect()
     }
 
+    pub fn clear(&mut self) -> io::Result<()> {
+        self.data.clear();
+        let file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&self.path)?;
+        self.log = file;
+        Ok(())
+    }
+
     pub fn compact(&mut self) -> io::Result<()> {
         let mut new_log = OpenOptions::new()
             .create(true)
