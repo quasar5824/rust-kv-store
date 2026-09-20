@@ -26,6 +26,13 @@ fn main() {
     ];
     store.batch(batch).expect("Failed to execute batch");
 
+    println!("\nPerforming atomic transaction...");
+    store.transaction(|tx| {
+        tx.set("tx:1".to_string(), "Value 1".to_string());
+        tx.set("tx:2".to_string(), "Value 2".to_string());
+        true // commit
+    }).expect("Transaction failed");
+
     println!("\nScanning for keys starting with 'user:':");
     for (k, v) in store.scan("user:") {
         println!("  {}: {}", k, v);

@@ -3,7 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Command {
     Set { key: String, value: String },
     Delete { key: String },
@@ -76,11 +76,14 @@ impl KvStore {
     }
 
     pub fn batch(&mut self, commands: Vec<Command>) -> io::Result<()> {
+        let mut buffer = Vec::new();
         for cmd in &commands {
             let serialized = serde_json::to_string(cmd).unwrap();
-            self.log.write_all(serialized.as_bytes())?;
-            self.log.write_all(b"\n")?;
+            buffer.extend_from_slice(serialized.as_bytes());
+            buffer.extend_from_slice(b"\n");
         }
+        
+        self.log.write_all(&buffer)?;
         self.log.flush()?;
 
         for cmd in commands {
@@ -95,6 +98,20 @@ impl KvStore {
             }
         }
         Ok(())
+    }
+
+    pub fn transaction(&mut self, f: impl FnOnce(&mut Transaction) -> bool) -> io::Result<bool> {
+        let mut tx = Transaction {
+            pending: Vec::new(),
+        };
+        
+        if f(&mut tx) {
+            let cmds = std::mem::take(&mut tx.pending);
+            self.batch(cmds)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn get(&self, key: &str) -> Option<&String> {
@@ -159,5 +176,19 @@ impl KvStore {
             key_count: self.data.len(),
             ops_count: self.ops_count,
         }
+    }
+}
+
+pub struct Transaction {
+    pending: Vec<Command>,
+}
+
+impl Transaction {
+    pub fn set(&mut self, key: String, value: String) {
+        self.pending.push(Command::Set { key, value });
+    }
+
+    pub fn delete(&mut self, key: String) {
+        self.pending.push(Command::Delete { key });
     }
 }
