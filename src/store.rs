@@ -90,6 +90,10 @@ impl KvStore {
         self.data.get(key)
     }
 
+    pub fn get_with_default(&self, key: &str, default: &str) -> String {
+        self.get(key).cloned().unwrap_or_else(|| default.to_string())
+    }
+
     pub fn exists(&self, key: &str) -> bool {
         self.data.contains_key(key)
     }
