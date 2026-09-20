@@ -9,15 +9,23 @@ pub enum Command {
     Delete { key: String },
 }
 
+#[derive(Debug)]
+pub struct StoreStats {
+    pub key_count: usize,
+    pub ops_count: usize,
+}
+
 pub struct KvStore {
     data: HashMap<String, String>,
     log: File,
     path: String,
+    ops_count: usize,
 }
 
 impl KvStore {
     pub fn open(path: &str) -> io::Result<Self> {
         let mut data = HashMap::new();
+        let mut ops_count = 0;
         
         let file = File::open(path);
         if let Ok(f) = file {
@@ -25,6 +33,7 @@ impl KvStore {
             for line in reader.lines() {
                 let line = line?;
                 if let Ok(cmd) = serde_json::from_str::<Command>(&line) {
+                    ops_count += 1;
                     match cmd {
                         Command::Set { key, value } => {
                             data.insert(key, value);
@@ -46,6 +55,7 @@ impl KvStore {
             data,
             log,
             path: path.to_string(),
+            ops_count,
         })
     }
 
@@ -74,6 +84,7 @@ impl KvStore {
         self.log.flush()?;
 
         for cmd in commands {
+            self.ops_count += 1;
             match cmd {
                 Command::Set { key, value } => {
                     self.data.insert(key, value);
@@ -111,6 +122,7 @@ impl KvStore {
 
     pub fn clear(&mut self) -> io::Result<()> {
         self.data.clear();
+        self.ops_count = 0;
         let file = OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -138,6 +150,14 @@ impl KvStore {
         new_log.flush()?;
         
         self.log = new_log;
+        self.ops_count = self.data.len();
         Ok(())
+    }
+
+    pub fn stats(&self) -> StoreStats {
+        StoreStats {
+            key_count: self.data.len(),
+            ops_count: self.ops_count,
+        }
     }
 }

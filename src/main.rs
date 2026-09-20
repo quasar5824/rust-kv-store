@@ -54,7 +54,10 @@ fn main() {
     println!("Exists {}: {}", missing, store.exists(missing));
     println!("Exists {}: {}", "user:2", store.exists("user:2"));
 
+    println!("\nStore Stats: {:?}", store.stats());
+
     println!("\nClearing store...");
     store.clear().expect("Failed to clear store");
     println!("Store size after clear: {}", store.get_all().len());
+    println!("Store Stats after clear: {:?}", store.stats());
 }
