@@ -137,6 +137,12 @@ impl KvStore {
             .collect()
     }
 
+    pub fn cursor(&self) -> KvCursor<'_> {
+        KvCursor {
+            iter: self.data.iter(),
+        }
+    }
+
     pub fn clear(&mut self) -> io::Result<()> {
         self.data.clear();
         self.ops_count = 0;
@@ -190,5 +196,17 @@ impl Transaction {
 
     pub fn delete(&mut self, key: String) {
         self.pending.push(Command::Delete { key });
+    }
+}
+
+pub struct KvCursor<'a> {
+    iter: std::collections::hash_map::Iter<'a, String, String>,
+}
+
+impl<'a> Iterator for KvCursor<'a> {
+    type Item = (&'a String, &'a String);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }

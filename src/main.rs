@@ -22,7 +22,7 @@ fn main() {
     let batch = vec![
         Command::Set { key: "user:3".to_string(), value: "Charlie".to_string() },
         Command::Set { key: "user:4".to_string(), value: "Dave".to_string() },
-        Command::Delete { key: "config:version".to_string() },
+        Command::Set { key: "config:version".to_string(), value: "1.1.0".to_string() },
     ];
     store.batch(batch).expect("Failed to execute batch");
 
@@ -51,8 +51,8 @@ fn main() {
     println!("Compacting log...");
     store.compact().expect("Failed to compact store");
 
-    println!("\nStore contents after deletion and compaction:");
-    for (k, v) in store.get_all() {
+    println!("\nStore contents after deletion and compaction (via cursor):");
+    for (k, v) in store.cursor() {
         println!("  {}: {}", k, v);
     }
 
