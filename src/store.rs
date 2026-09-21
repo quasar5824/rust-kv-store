@@ -137,6 +137,15 @@ impl KvStore {
             .collect()
     }
 
+    pub fn range(&self, start: &str, end: &str) -> Vec<(&String, &String)> {
+        let mut results: Vec<(&String, &String)> = self.data
+            .iter()
+            .filter(|(k, _)| k >= start && k <= end)
+            .collect();
+        results.sort_by(|a, b| a.0.cmp(b.0));
+        results
+    }
+
     pub fn cursor(&self) -> KvCursor<'_> {
         KvCursor {
             iter: self.data.iter(),

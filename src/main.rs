@@ -38,6 +38,11 @@ fn main() {
         println!("  {}: {}", k, v);
     }
 
+    println!("\nQuerying range 'user:2' to 'user:4':");
+    for (k, v) in store.range("user:2", "user:4") {
+        println!("  {}: {}", k, v);
+    }
+
     println!("\nUpdating key: {}", key2);
     if store.update(key2, "Bobby").expect("Failed to update") {
         println!("Successfully updated {} to Bobby", key2);
