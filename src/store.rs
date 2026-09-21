@@ -75,6 +75,14 @@ impl KvStore {
         self.batch(vec![Command::Delete { key: key.to_string() }])
     }
 
+    pub fn bulk_import(&mut self, pairs: &[(&str, &str)]) -> io::Result<()> {
+        let commands = pairs
+            .iter()
+            .map(|(k, v)| Command::Set { key: k.to_string(), value: v.to_string() })
+            .collect();
+        self.batch(commands)
+    }
+
     pub fn batch(&mut self, commands: Vec<Command>) -> io::Result<()> {
         let mut buffer = Vec::new();
         for cmd in &commands {

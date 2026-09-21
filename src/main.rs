@@ -26,6 +26,14 @@ fn main() {
     ];
     store.batch(batch).expect("Failed to execute batch");
 
+    println!("\nPerforming bulk import...");
+    let imports = vec![
+        ("app:name", "RustKV"),
+        ("app:env", "development"),
+        ("app:debug", "true"),
+    ];
+    store.bulk_import(&imports).expect("Failed to bulk import");
+
     println!("\nPerforming atomic transaction...");
     store.transaction(|tx| {
         tx.set("tx:1".to_string(), "Value 1".to_string());
