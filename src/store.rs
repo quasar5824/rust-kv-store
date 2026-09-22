@@ -200,6 +200,36 @@ impl KvStore {
             ops_count: self.ops_count,
         }
     }
+
+    pub fn backup(&self, backup_path: &str) -> io::Result<()> {
+        let mut file = File::create(backup_path)?;
+        for (key, value) in &self.data {
+            let cmd = Command::Set {
+                key: key.clone(),
+                value: value.clone(),
+            };
+            let serialized = serde_json::to_string(&cmd).unwrap();
+            file.write_all(serialized.as_bytes())?;
+            file.write_all(b"\n")?;
+        }
+        file.flush()
+    }
+
+    pub fn restore(&mut self, backup_path: &str) -> io::Result<()> {
+        let file = File::open(backup_path)?;
+        let reader = BufReader::new(file);
+        let mut commands = Vec::new();
+
+        for line in reader.lines() {
+            let line = line?;
+            if let Ok(cmd) = serde_json::from_str::<Command>(&line) {
+                commands.push(cmd);
+            }
+        }
+
+        self.clear()?;
+        self.batch(commands)
+    }
 }
 
 pub struct Transaction {
