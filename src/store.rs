@@ -83,6 +83,14 @@ impl KvStore {
         self.batch(commands)
     }
 
+    pub fn mset(&mut self, pairs: Vec<(String, String)>) -> io::Result<()> {
+        let commands = pairs
+            .into_iter()
+            .map(|(key, value)| Command::Set { key, value })
+            .collect();
+        self.batch(commands)
+    }
+
     pub fn batch(&mut self, commands: Vec<Command>) -> io::Result<()> {
         let mut buffer = Vec::new();
         for cmd in &commands {
@@ -124,6 +132,10 @@ impl KvStore {
 
     pub fn get(&self, key: &str) -> Option<&String> {
         self.data.get(key)
+    }
+
+    pub fn mget(&self, keys: &[&str]) -> Vec<Option<&String>> {
+        keys.iter().map(|&k| self.get(k)).collect()
     }
 
     pub fn get_with_default(&self, key: &str, default: &str) -> String {
