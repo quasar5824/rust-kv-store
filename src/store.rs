@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
+use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Command {
-    Set { key: String, value: String },
+    Set { key: String, value: String, ttl: Option<u64> },
     Delete { key: String },
 }
 
@@ -15,8 +16,13 @@ pub struct StoreStats {
     pub ops_count: usize,
 }
 
+struct StoreValue {
+    value: String,
+    expires_at: Option<SystemTime>,
+}
+
 pub struct KvStore {
-    data: HashMap<String, String>,
+    data: HashMap<String, StoreValue>,
     log: File,
     path: String,
     ops_count: usize,
@@ -35,8 +41,9 @@ impl KvStore {
                 if let Ok(cmd) = serde_json::from_str::<Command>(&line) {
                     ops_count += 1;
                     match cmd {
-                        Command::Set { key, value } => {
-                            data.insert(key, value);
+                        Command::Set { key, value, ttl } => {
+                            let expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                            data.insert(key, StoreValue { value, expires_at });
                         }
                         Command::Delete { key } => {
                             data.remove(&key);
@@ -60,7 +67,15 @@ impl KvStore {
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> io::Result<()> {
-        self.batch(vec![Command::Set { key: key.to_string(), value: value.to_string() }])
+        self.set_with_ttl(key, value, None)
+    }
+
+    pub fn set_with_ttl(&mut self, key: &str, value: &str, ttl: Option<u64>) -> io::Result<()> {
+        self.batch(vec![Command::Set { 
+            key: key.to_string(), 
+            value: value.to_string(),
+            ttl
+        }])
     }
 
     pub fn update(&mut self, key: &str, value: &str) -> io::Result<bool> {
@@ -78,7 +93,7 @@ impl KvStore {
     pub fn bulk_import(&mut self, pairs: &[(&str, &str)]) -> io::Result<()> {
         let commands = pairs
             .iter()
-            .map(|(k, v)| Command::Set { key: k.to_string(), value: v.to_string() })
+            .map(|(k, v)| Command::Set { key: k.to_string(), value: v.to_string(), ttl: None })
             .collect();
         self.batch(commands)
     }
@@ -86,7 +101,7 @@ impl KvStore {
     pub fn mset(&mut self, pairs: Vec<(String, String)>) -> io::Result<()> {
         let commands = pairs
             .into_iter()
-            .map(|(key, value)| Command::Set { key, value })
+            .map(|(key, value)| Command::Set { key, value, ttl: None })
             .collect();
         self.batch(commands)
     }
@@ -105,8 +120,9 @@ impl KvStore {
         for cmd in commands {
             self.ops_count += 1;
             match cmd {
-                Command::Set { key, value } => {
-                    self.data.insert(key, value);
+                Command::Set { key, value, ttl } => {
+                    let expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                    self.data.insert(key, StoreValue { value, expires_at });
                 }
                 Command::Delete { key } => {
                     self.data.remove(&key);
@@ -130,46 +146,71 @@ impl KvStore {
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<&String> {
-        self.data.get(key)
+    pub fn get(&mut self, key: &str) -> Option<&String> {
+        if let Some(sv) = self.data.get(key) {
+            if let Some(expiry) = sv.expires_at {
+                if SystemTime::now() > expiry {
+                    self.data.remove(key);
+                    return None;
+                }
+            }
+            return Some(&sv.value);
+        }
+        None
     }
 
-    pub fn mget(&self, keys: &[&str]) -> Vec<Option<&String>> {
-        keys.iter().map(|&k| self.get(k)).collect()
+    pub fn mget(&mut self, keys: &[&str]) -> Vec<Option<String>> {
+        keys.iter().map(|&k| self.get(k).cloned()).collect()
     }
 
-    pub fn get_with_default(&self, key: &str, default: &str) -> String {
+    pub fn get_with_default(&mut self, key: &str, default: &str) -> String {
         self.get(key).cloned().unwrap_or_else(|| default.to_string())
     }
 
-    pub fn exists(&self, key: &str) -> bool {
-        self.data.contains_key(key)
+    pub fn exists(&mut self, key: &str) -> bool {
+        self.get(key).is_some()
     }
 
-    pub fn get_all(&self) -> Vec<(&String, &String)> {
-        self.data.iter().collect()
-    }
-
-    pub fn scan(&self, prefix: &str) -> Vec<(&String, &String)> {
-        self.data
-            .iter()
-            .filter(|(k, _)| k.starts_with(prefix))
-            .collect()
-    }
-
-    pub fn range(&self, start: &str, end: &str) -> Vec<(&String, &String)> {
-        let mut results: Vec<(&String, &String)> = self.data
-            .iter()
-            .filter(|(k, _)| k >= start && k <= end)
-            .collect();
-        results.sort_by(|a, b| a.0.cmp(b.0));
+    pub fn get_all_cloned(&mut self) -> Vec<(String, String)> {
+        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let mut results = Vec::new();
+        for k in keys {
+            if let Some(v) = self.get(&k) {
+                results.push((k, v.clone()));
+            }
+        }
         results
     }
 
-    pub fn cursor(&self) -> KvCursor<'_> {
-        KvCursor {
-            iter: self.data.iter(),
+    pub fn scan(&mut self, prefix: &str) -> Vec<(String, String)> {
+        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let mut results = Vec::new();
+        for k in keys {
+            if k.starts_with(prefix) {
+                if let Some(v) = self.get(&k) {
+                    results.push((k, v.clone()));
+                }
+            }
         }
+        results
+    }
+
+    pub fn range(&mut self, start: &str, end: &str) -> Vec<(String, String)> {
+        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let mut results = Vec::new();
+        for k in keys {
+            if k >= start && k <= end {
+                if let Some(v) = self.get(&k) {
+                    results.push((k, v.clone()));
+                }
+            }
+        }
+        results.sort_by(|a, b| a.0.cmp(&b.0));
+        results
+    }
+
+    pub fn cursor(&mut self) -> Vec<(String, String)> {
+        self.get_all_cloned()
     }
 
     pub fn clear(&mut self) -> io::Result<()> {
@@ -190,14 +231,27 @@ impl KvStore {
             .truncate(true)
             .open(&self.path)?;
 
-        for (key, value) in &self.data {
-            let cmd = Command::Set {
-                key: key.clone(),
-                value: value.clone(),
-            };
-            let serialized = serde_json::to_string(&cmd).unwrap();
-            new_log.write_all(serialized.as_bytes())?;
-            new_log.write_all(b"\n")?;
+        let keys: Vec<String> = self.data.keys().cloned().collect();
+        for k in keys {
+            if let Some(sv) = self.data.get(&k) {
+                let ttl = sv.expires_at.and_then(|expiry| {
+                    let now = SystemTime::now();
+                    if expiry > now {
+                        Some(expiry.duration_since(now).unwrap().as_secs())
+                    } else {
+                        None
+                    }
+                });
+
+                let cmd = Command::Set {
+                    key: k.clone(),
+                    value: sv.value.clone(),
+                    ttl,
+                };
+                let serialized = serde_json::to_string(&cmd).unwrap();
+                new_log.write_all(serialized.as_bytes())?;
+                new_log.write_all(b"\n")?;
+            }
         }
         new_log.flush()?;
         
@@ -206,23 +260,39 @@ impl KvStore {
         Ok(())
     }
 
-    pub fn stats(&self) -> StoreStats {
+    pub fn stats(&mut self) -> StoreStats {
+        let keys: Vec<String> = self.data.keys().cloned().collect();
+        for k in keys {
+            self.exists(&k);
+        }
         StoreStats {
             key_count: self.data.len(),
             ops_count: self.ops_count,
         }
     }
 
-    pub fn backup(&self, backup_path: &str) -> io::Result<()> {
+    pub fn backup(&mut self, backup_path: &str) -> io::Result<()> {
         let mut file = File::create(backup_path)?;
-        for (key, value) in &self.data {
-            let cmd = Command::Set {
-                key: key.clone(),
-                value: value.clone(),
-            };
-            let serialized = serde_json::to_string(&cmd).unwrap();
-            file.write_all(serialized.as_bytes())?;
-            file.write_all(b"\n")?;
+        let keys: Vec<String> = self.data.keys().cloned().collect();
+        for k in keys {
+            if let Some(sv) = self.data.get(&k) {
+                let ttl = sv.expires_at.and_then(|expiry| {
+                    let now = SystemTime::now();
+                    if expiry > now {
+                        Some(expiry.duration_since(now).unwrap().as_secs())
+                    } else {
+                        None
+                    }
+                });
+                let cmd = Command::Set {
+                    key: k,
+                    value: sv.value.clone(),
+                    ttl,
+                };
+                let serialized = serde_json::to_string(&cmd).unwrap();
+                file.write_all(serialized.as_bytes())?;
+                file.write_all(b"\n")?;
+            }
         }
         file.flush()
     }
@@ -250,22 +320,14 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn set(&mut self, key: String, value: String) {
-        self.pending.push(Command::Set { key, value });
+        self.set_with_ttl(key, value, None);
+    }
+
+    pub fn set_with_ttl(&mut self, key: String, value: String, ttl: Option<u64>) {
+        self.pending.push(Command::Set { key, value, ttl });
     }
 
     pub fn delete(&mut self, key: String) {
         self.pending.push(Command::Delete { key });
-    }
-}
-
-pub struct KvCursor<'a> {
-    iter: std::collections::hash_map::Iter<'a, String, String>,
-}
-
-impl<'a> Iterator for KvCursor<'a> {
-    type Item = (&'a String, &'a String);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
     }
 }

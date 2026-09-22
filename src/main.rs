@@ -1,6 +1,8 @@
 mod store;
 
 use store::{KvStore, Command};
+use std::thread;
+use std::time::Duration;
 
 fn main() {
     let path = "store.db";
@@ -18,11 +20,21 @@ fn main() {
     store.set(key3, value3).expect("Failed to set value");
     println!("Set values for {}, {}, and {}", key1, key2, key3);
 
+    println!("\nTesting TTL (Time-To-Live)...");
+    let ttl_key = "temp:session";
+    let ttl_val = "secret_token";
+    store.set_with_ttl(ttl_key, ttl_val, Some(2)).expect("Failed to set TTL value");
+    println!("Set {} with 2s TTL: {:?}", ttl_key, store.get(ttl_key));
+
+    println!("Waiting 3 seconds for expiration...");
+    thread::sleep(Duration::from_secs(3));
+    println!("Get {} after 3s: {:?}", ttl_key, store.get(ttl_key));
+
     println!("\nPerforming batch update...");
     let batch = vec![
-        Command::Set { key: "user:3".to_string(), value: "Charlie".to_string() },
-        Command::Set { key: "user:4".to_string(), value: "Dave".to_string() },
-        Command::Set { key: "config:version".to_string(), value: "1.1.0".to_string() },
+        Command::Set { key: "user:3".to_string(), value: "Charlie".to_string(), ttl: None },
+        Command::Set { key: "user:4".to_string(), value: "Dave".to_string(), ttl: None },
+        Command::Set { key: "config:version".to_string(), value: "1.1.0".to_string(), ttl: None },
     ];
     store.batch(batch).expect("Failed to execute batch");
 
@@ -64,7 +76,7 @@ fn main() {
     println!("Compacting log...");
     store.compact().expect("Failed to compact store");
 
-    println!("\nStore contents after deletion and compaction (via cursor):");
+    println!("\nStore contents after deletion and compaction:");
     for (k, v) in store.cursor() {
         println!("  {}: {}", k, v);
     }
@@ -78,6 +90,6 @@ fn main() {
 
     println!("\nClearing store...");
     store.clear().expect("Failed to clear store");
-    println!("Store size after clear: {}", store.get_all().len());
+    println!("Store size after clear: {}", store.get_all_cloned().len());
     println!("Store Stats after clear: {:?}", store.stats());
 }
