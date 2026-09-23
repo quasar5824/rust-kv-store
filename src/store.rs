@@ -96,6 +96,26 @@ impl KvStore {
         self.batch(vec![Command::Delete { key: key.to_string() }])
     }
 
+    pub fn rename(&mut self, old_key: &str, new_key: &str) -> io::Result<bool> {
+        if !self.exists(old_key) {
+            return Ok(false);
+        }
+
+        let value = self.get(old_key).unwrap().clone();
+        let mut commands = Vec::with_capacity(2);
+        commands.push(Command::Set { 
+            key: new_key.to_string(), 
+            value, 
+            ttl: None 
+        });
+        commands.push(Command::Delete { 
+            key: old_key.to_string() 
+        });
+
+        self.batch(commands)?;
+        Ok(true)
+    }
+
     pub fn bulk_import(&mut self, pairs: &[(&str, &str)]) -> io::Result<()> {
         let commands = pairs
             .iter()
