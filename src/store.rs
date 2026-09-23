@@ -197,6 +197,12 @@ impl KvStore {
         None
     }
 
+    pub fn get_many(&mut self, keys: &[&str]) -> Vec<(String, String)> {
+        keys.iter()
+            .filter_map(|&k| self.get(k).map(|v| (k.to_string(), v.clone())))
+            .collect()
+    }
+
     pub fn mget(&mut self, keys: &[&str]) -> Vec<Option<String>> {
         keys.iter().map(|&k| self.get(k).cloned()).collect()
     }
@@ -260,6 +266,26 @@ impl KvStore {
             .open(&self.path)?;
         self.log = file;
         Ok(())
+    }
+
+    pub fn clear_expired(&mut self) -> io::Result<usize> {
+        let now = SystemTime::now();
+        let expired_keys: Vec<String> = self.data
+            .iter()
+            .filter(|(_, sv)| sv.expires_at.map_or(false, |exp| now > exp))
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        let count = expired_keys.len();
+        for k in expired_keys {
+            self.data.remove(&k);
+        }
+
+        if count > 0 {
+            self.compact()?;
+        }
+
+        Ok(count)
     }
 
     pub fn compact(&mut self) -> io::Result<()> {
