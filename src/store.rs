@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum Command {
     Set { key: String, value: String, ttl: Option<u64> },
     Delete { key: String },
+    Incr { key: String, delta: i64 },
 }
 
 #[derive(Debug)]
@@ -47,6 +48,11 @@ impl KvStore {
                         }
                         Command::Delete { key } => {
                             data.remove(&key);
+                        }
+                        Command::Incr { key, delta } => {
+                            let current_val = data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
+                            let new_val = current_val + delta;
+                            data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
                         }
                     }
                 }
@@ -127,9 +133,21 @@ impl KvStore {
                 Command::Delete { key } => {
                     self.data.remove(&key);
                 }
+                Command::Incr { key, delta } => {
+                    let current_val = self.data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
+                    let new_val = current_val + delta;
+                    self.data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
+                }
             }
         }
         Ok(())
+    }
+
+    pub fn incr(&mut self, key: &str, delta: i64) -> io::Result<i64> {
+        let current_val = self.data.get(key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
+        let new_val = current_val + delta;
+        self.batch(vec![Command::Incr { key: key.to_string(), delta }])?;
+        Ok(new_val)
     }
 
     pub fn transaction(&mut self, f: impl FnOnce(&mut Transaction) -> bool) -> io::Result<bool> {
@@ -329,5 +347,9 @@ impl Transaction {
 
     pub fn delete(&mut self, key: String) {
         self.pending.push(Command::Delete { key });
+    }
+
+    pub fn incr(&mut self, key: String, delta: i64) {
+        self.pending.push(Command::Incr { key, delta });
     }
 }
