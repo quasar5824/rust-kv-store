@@ -84,6 +84,14 @@ impl KvStore {
         }])
     }
 
+    pub fn set_if_not_exists(&mut self, key: &str, value: &str, ttl: Option<u64>) -> io::Result<bool> {
+        if self.exists(key) {
+            return Ok(false);
+        }
+        self.set_with_ttl(key, value, ttl)?;
+        Ok(true)
+    }
+
     pub fn update(&mut self, key: &str, value: &str) -> io::Result<bool> {
         if !self.exists(key) {
             return Ok(false);
@@ -195,6 +203,10 @@ impl KvStore {
             return Some(&sv.value);
         }
         None
+    }
+
+    pub fn get_if_exists(&mut self, key: &str) -> Option<&String> {
+        self.get(key)
     }
 
     pub fn get_ttl(&mut self, key: &str) -> Option<Option<u64>> {
