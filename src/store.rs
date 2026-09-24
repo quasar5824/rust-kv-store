@@ -197,6 +197,21 @@ impl KvStore {
         None
     }
 
+    pub fn get_ttl(&mut self, key: &str) -> Option<Option<u64>> {
+        if let Some(sv) = self.data.get(key) {
+            if let Some(expiry) = sv.expires_at {
+                let now = SystemTime::now();
+                if now > expiry {
+                    self.data.remove(key);
+                    return None;
+                }
+                return Some(Some(expiry.duration_since(now).unwrap().as_secs()));
+            }
+            return Some(None);
+        }
+        None
+    }
+
     pub fn get_many(&mut self, keys: &[&str]) -> Vec<(String, String)> {
         keys.iter()
             .filter_map(|&k| self.get(k).map(|v| (k.to_string(), v.clone())))
