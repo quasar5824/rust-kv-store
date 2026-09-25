@@ -98,6 +98,14 @@ impl KvStore {
         Ok(true)
     }
 
+    pub fn get_or_set(&mut self, key: &str, value: &str, ttl: Option<u64>) -> io::Result<String> {
+        if let Some(existing) = self.get(key) {
+            return Ok(existing.clone());
+        }
+        self.set_with_ttl(key, value, ttl)?;
+        Ok(value.to_string())
+    }
+
     pub fn update(&mut self, key: &str, value: &str) -> io::Result<bool> {
         if !self.exists(key) {
             return Ok(false);

@@ -94,3 +94,18 @@ fn test_range_scan() {
     assert_eq!(scan.len(), 1);
     assert_eq!(scan[0].0, "b");
 }
+
+#[test]
+fn test_get_or_set() {
+    let mut store = setup_store();
+    
+    // Set new value
+    let val1 = store.get_or_set("gos1", "val1", None).unwrap();
+    assert_eq!(val1, "val1");
+    assert_eq!(store.get("gos1"), Some(&"val1".to_string()));
+
+    // Get existing value
+    let val2 = store.get_or_set("gos1", "val_new", None).unwrap();
+    assert_eq!(val2, "val1");
+    assert_eq!(store.get("gos1"), Some(&"val1".to_string()));
+}
