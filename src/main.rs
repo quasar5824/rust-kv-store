@@ -1,5 +1,8 @@
 mod store;
 
+#[cfg(test)]
+mod tests;
+
 use store::{KvStore, Command};
 use std::thread;
 use std::time::Duration;

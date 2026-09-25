@@ -264,6 +264,18 @@ impl KvStore {
         results
     }
 
+    pub fn get_all_with_ttl(&mut self) -> Vec<(String, String, Option<u64>)> {
+        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let mut results = Vec::new();
+        for k in keys {
+            if let Some(v) = self.get(&k) {
+                let ttl = self.get_ttl(&k).unwrap_or(None);
+                results.push((k, v.clone(), ttl));
+            }
+        }
+        results
+    }
+
     pub fn scan(&mut self, prefix: &str) -> Vec<(String, String)> {
         let keys: Vec<String> = self.data.keys().cloned().collect();
         let mut results = Vec::new();
