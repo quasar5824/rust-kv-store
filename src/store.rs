@@ -9,6 +9,7 @@ pub enum Command {
     Set { key: String, value: String, ttl: Option<u64> },
     Delete { key: String },
     Incr { key: String, delta: i64 },
+    Expire { key: String, ttl: Option<u64> },
 }
 
 #[derive(Debug)]
@@ -53,6 +54,11 @@ impl KvStore {
                             let current_val = data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
                             let new_val = current_val + delta;
                             data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
+                        }
+                        Command::Expire { key, ttl } => {
+                            if let Some(sv) = data.get_mut(&key) {
+                                sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                            }
                         }
                     }
                 }
@@ -165,6 +171,11 @@ impl KvStore {
                     let current_val = self.data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
                     let new_val = current_val + delta;
                     self.data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
+                }
+                Command::Expire { key, ttl } => {
+                    if let Some(sv) = self.data.get_mut(&key) {
+                        sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                    }
                 }
             }
         }
@@ -403,6 +414,21 @@ impl KvStore {
         self.clear()?;
         self.batch(commands)
     }
+
+    pub fn expire(&mut self, key: &str, ttl: Option<u64>) -> io::Result<bool> {
+        if !self.exists(key) {
+            return Ok(false);
+        }
+        self.batch(vec![Command::Expire { 
+            key: key.to_string(), 
+            ttl 
+        }])?;
+        Ok(true)
+    }
+
+    pub fn persist(&mut self) -> io::Result<()> {
+        self.log.sync_all()
+    }
 }
 
 pub struct Transaction {
@@ -424,5 +450,9 @@ impl Transaction {
 
     pub fn incr(&mut self, key: String, delta: i64) {
         self.pending.push(Command::Incr { key, delta });
+    }
+
+    pub fn expire(&mut self, key: String, ttl: Option<u64>) {
+        self.pending.push(Command::Expire { key, ttl });
     }
 }
