@@ -109,3 +109,47 @@ fn test_get_or_set() {
     assert_eq!(val2, "val1");
     assert_eq!(store.get("gos1"), Some(&"val1".to_string()));
 }
+
+#[test]
+fn test_set_if_not_exists() {
+    let mut store = setup_store();
+    assert!(store.set_if_not_exists("unique", "val1", None).unwrap());
+    assert!(!store.set_if_not_exists("unique", "val2", None).unwrap());
+    assert_eq!(store.get("unique"), Some(&"val1".to_string()));
+}
+
+#[test]
+fn test_get_ttl() {
+    let mut store = setup_store();
+    store.set_with_ttl("ttl_key", "val", Some(10)).unwrap();
+    let ttl = store.get_ttl("ttl_key").unwrap();
+    assert!(ttl.is_some());
+    assert!(ttl.unwrap() <= 10);
+    
+    store.set("no_ttl", "val").unwrap();
+    assert_eq!(store.get_ttl("no_ttl"), Some(None));
+    assert_eq!(store.get_ttl("missing"), None);
+}
+
+#[test]
+fn test_expire() {
+    let mut store = setup_store();
+    store.set("key", "val").unwrap();
+    assert!(store.expire("key", Some(5)).unwrap());
+    assert!(store.get_ttl("key").unwrap().is_some());
+    assert!(!store.expire("missing", Some(5)).unwrap());
+}
+
+#[test]
+fn test_prefix_queries() {
+    let mut store = setup_store();
+    store.set("user:1", "A").unwrap();
+    store.set("user:2", "B").unwrap();
+    store.set("admin:1", "C").unwrap();
+
+    let users = store.get_all_with_prefix("user:");
+    assert_eq!(users.len(), 2);
+    
+    let admins = store.get_all_with_prefix("admin:");
+    assert_eq!(admins.len(), 1);
+}

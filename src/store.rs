@@ -297,6 +297,10 @@ impl KvStore {
         results
     }
 
+    pub fn get_all_with_prefix(&mut self, prefix: &str) -> Vec<(String, String)> {
+        self.scan(prefix)
+    }
+
     pub fn range(&mut self, start: &str, end: &str) -> Vec<(String, String)> {
         let keys: Vec<String> = self.data.keys().cloned().collect();
         let mut results = Vec::new();
