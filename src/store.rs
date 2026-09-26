@@ -118,6 +118,24 @@ impl KvStore {
         self.batch(vec![Command::Delete { key: key.to_string() }])
     }
 
+    pub fn mdelete(&mut self, keys: &[&str]) -> io::Result<usize> {
+        let mut deleted_count = 0;
+        let mut commands = Vec::new();
+
+        for &key in keys {
+            if self.exists(key) {
+                deleted_count += 1;
+                commands.push(Command::Delete { key: key.to_string() });
+            }
+        }
+
+        if !commands.is_empty() {
+            self.batch(commands)?;
+        }
+
+        Ok(deleted_count)
+    }
+
     pub fn rename(&mut self, old_key: &str, new_key: &str) -> io::Result<bool> {
         if !self.exists(old_key) {
             return Ok(false);
@@ -259,6 +277,10 @@ impl KvStore {
 
     pub fn exists(&mut self, key: &str) -> bool {
         self.get(key).is_some()
+    }
+
+    pub fn mexists(&mut self, keys: &[&str]) -> Vec<bool> {
+        keys.iter().map(|&k| self.exists(k)).collect()
     }
 
     pub fn get_all_cloned(&mut self) -> Vec<(String, String)> {
