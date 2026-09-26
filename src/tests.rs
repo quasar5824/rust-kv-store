@@ -183,3 +183,16 @@ fn test_bulk_import() {
     assert_eq!(store.get("b2"), Some(&"v2".to_string()));
     assert_eq!(store.get("b3"), Some(&"v3".to_string()));
 }
+
+#[test]
+fn test_mset() {
+    let mut store = setup_store();
+    let data = vec![
+        ("m1".to_string(), "v1".to_string()),
+        ("m2".to_string(), "v2".to_string()),
+    ];
+    store.mset(data).unwrap();
+    
+    assert_eq!(store.get("m1"), Some(&"v1".to_string()));
+    assert_eq!(store.get("m2"), Some(&"v2".to_string()));
+}
