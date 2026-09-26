@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, rename};
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
@@ -351,11 +351,12 @@ impl KvStore {
     }
 
     pub fn compact(&mut self) -> io::Result<()> {
+        let compact_path = format!("{}.compact", self.path);
         let mut new_log = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(&self.path)?;
+            .open(&compact_path)?;
 
         let keys: Vec<String> = self.data.keys().cloned().collect();
         for k in keys {
@@ -381,7 +382,13 @@ impl KvStore {
         }
         new_log.flush()?;
         
-        self.log = new_log;
+        rename(&compact_path, &self.path)?;
+        
+        let log = OpenOptions::new()
+            .append(true)
+            .open(&self.path)?;
+        
+        self.log = log;
         self.ops_count = self.data.len();
         Ok(())
     }

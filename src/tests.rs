@@ -153,3 +153,33 @@ fn test_prefix_queries() {
     let admins = store.get_all_with_prefix("admin:");
     assert_eq!(admins.len(), 1);
 }
+
+#[test]
+fn test_backup_restore() {
+    let mut store = setup_store();
+    store.set("k1", "v1").unwrap();
+    store.set("k2", "v2").unwrap();
+    
+    let backup_path = "backup.db";
+    store.backup(backup_path).unwrap();
+    
+    store.clear().unwrap();
+    assert_eq!(store.get("k1"), None);
+    
+    store.restore(backup_path).unwrap();
+    assert_eq!(store.get("k1"), Some(&"v1".to_string()));
+    assert_eq!(store.get("k2"), Some(&"v2".to_string()));
+    
+    let _ = fs::remove_file(backup_path);
+}
+
+#[test]
+fn test_bulk_import() {
+    let mut store = setup_store();
+    let data = vec![("b1", "v1"), ("b2", "v2"), ("b3", "v3")];
+    store.bulk_import(&data).unwrap();
+    
+    assert_eq!(store.get("b1"), Some(&"v1".to_string()));
+    assert_eq!(store.get("b2"), Some(&"v2".to_string()));
+    assert_eq!(store.get("b3"), Some(&"v3".to_string()));
+}
