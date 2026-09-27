@@ -1,7 +1,8 @@
-use crate::store::KvStore;
+use crate::store::{KvStore, StoreEvent};
 use std::thread;
 use std::time::Duration;
 use std::fs;
+use std::sync::{Arc, Mutex};
 
 fn setup_store() -> KvStore {
     let path = "test_store.db";
@@ -195,4 +196,24 @@ fn test_mset() {
     
     assert_eq!(store.get("m1"), Some(&"v1".to_string()));
     assert_eq!(store.get("m2"), Some(&"v2".to_string()));
+}
+
+#[test]
+fn test_observers() {
+    let mut store = setup_store();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    
+    let events_clone = Arc::clone(&events);
+    store.add_observer("obs_key", move |key, event| {
+        events_clone.lock().unwrap().push((key.to_string(), event));
+    });
+
+    store.set("obs_key", "val1").unwrap();
+    store.set("other_key", "val2").unwrap();
+    store.delete("obs_key").unwrap();
+
+    let result = events.lock().unwrap();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0], ("obs_key".to_string(), StoreEvent::Set));
+    assert_eq!(result[1], ("obs_key".to_string(), StoreEvent::Delete));
 }

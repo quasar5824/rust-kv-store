@@ -12,6 +12,13 @@ pub enum Command {
     Expire { key: String, ttl: Option<u64> },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreEvent {
+    Set,
+    Delete,
+    Expire,
+}
+
 #[derive(Debug)]
 pub struct StoreStats {
     pub key_count: usize,
@@ -28,6 +35,7 @@ pub struct KvStore {
     log: File,
     path: String,
     ops_count: usize,
+    observers: HashMap<String, Vec<Box<dyn Fn(&str, StoreEvent) + Send + Sync>>>,
 }
 
 impl KvStore {
@@ -75,7 +83,23 @@ impl KvStore {
             log,
             path: path.to_string(),
             ops_count,
+            observers: HashMap::new(),
         })
+    }
+
+    pub fn add_observer<F>(&mut self, key: &str, callback: F)
+    where
+        F: Fn(&str, StoreEvent) + Send + Sync + 'static,
+    {
+        self.observers.entry(key.to_string()).or_default().push(Box::new(callback));
+    }
+
+    fn notify(&self, key: &str, event: StoreEvent) {
+        if let Some(callbacks) = self.observers.get(key) {
+            for cb in callbacks {
+                cb(key, event);
+            }
+        }
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> io::Result<()> {
@@ -188,19 +212,23 @@ impl KvStore {
             match cmd {
                 Command::Set { key, value, ttl } => {
                     let expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
-                    self.data.insert(key, StoreValue { value, expires_at });
+                    self.data.insert(key.clone(), StoreValue { value, expires_at });
+                    self.notify(&key, StoreEvent::Set);
                 }
                 Command::Delete { key } => {
                     self.data.remove(&key);
+                    self.notify(&key, StoreEvent::Delete);
                 }
                 Command::Incr { key, delta } => {
                     let current_val = self.data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
                     let new_val = current_val + delta;
-                    self.data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
+                    self.data.insert(key.clone(), StoreValue { value: new_val.to_string(), expires_at: None });
+                    self.notify(&key, StoreEvent::Set);
                 }
                 Command::Expire { key, ttl } => {
                     if let Some(sv) = self.data.get_mut(&key) {
                         sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                        self.notify(&key, StoreEvent::Expire);
                     }
                 }
             }
@@ -234,6 +262,7 @@ impl KvStore {
             if let Some(expiry) = sv.expires_at {
                 if SystemTime::now() > expiry {
                     self.data.remove(key);
+                    self.notify(key, StoreEvent::Delete);
                     return None;
                 }
             }
@@ -252,6 +281,7 @@ impl KvStore {
                 let now = SystemTime::now();
                 if now > expiry {
                     self.data.remove(key);
+                    self.notify(key, StoreEvent::Delete);
                     return None;
                 }
                 return Some(Some(expiry.duration_since(now).unwrap().as_secs()));
@@ -363,6 +393,7 @@ impl KvStore {
         let count = expired_keys.len();
         for k in expired_keys {
             self.data.remove(&k);
+            self.notify(&k, StoreEvent::Delete);
         }
 
         if count > 0 {
