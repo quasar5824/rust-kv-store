@@ -314,9 +314,20 @@ impl KvStore {
         keys.iter().map(|&k| self.exists(k)).collect()
     }
 
+    pub fn keys(&mut self) -> Vec<String> {
+        let current_keys: Vec<String> = self.data.keys().cloned().collect();
+        let mut active_keys = Vec::with_capacity(current_keys.len());
+        for k in current_keys {
+            if self.exists(&k) {
+                active_keys.push(k);
+            }
+        }
+        active_keys
+    }
+
     pub fn get_all_cloned(&mut self) -> Vec<(String, String)> {
-        let keys: Vec<String> = self.data.keys().cloned().collect();
-        let mut results = Vec::new();
+        let keys = self.keys();
+        let mut results = Vec::with_capacity(keys.len());
         for k in keys {
             if let Some(v) = self.get(&k) {
                 results.push((k, v.clone()));
@@ -326,8 +337,8 @@ impl KvStore {
     }
 
     pub fn get_all_with_ttl(&mut self) -> Vec<(String, String, Option<u64>)> {
-        let keys: Vec<String> = self.data.keys().cloned().collect();
-        let mut results = Vec::new();
+        let keys = self.keys();
+        let mut results = Vec::with_capacity(keys.len());
         for k in keys {
             if let Some(v) = self.get(&k) {
                 let ttl = self.get_ttl(&k).unwrap_or(None);
@@ -338,7 +349,7 @@ impl KvStore {
     }
 
     pub fn scan(&mut self, prefix: &str) -> Vec<(String, String)> {
-        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let keys = self.keys();
         let mut results = Vec::new();
         for k in keys {
             if k.starts_with(prefix) {
@@ -355,7 +366,7 @@ impl KvStore {
     }
 
     pub fn range(&mut self, start: &str, end: &str) -> Vec<(String, String)> {
-        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let keys = self.keys();
         let mut results = Vec::new();
         for k in keys {
             if k >= start && k <= end {
@@ -412,7 +423,7 @@ impl KvStore {
             .truncate(true)
             .open(&compact_path)?;
 
-        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let keys = self.keys();
         for k in keys {
             if let Some(sv) = self.data.get(&k) {
                 let ttl = sv.expires_at.and_then(|expiry| {
@@ -448,19 +459,16 @@ impl KvStore {
     }
 
     pub fn stats(&mut self) -> StoreStats {
-        let keys: Vec<String> = self.data.keys().cloned().collect();
-        for k in keys {
-            self.exists(&k);
-        }
+        let keys = self.keys();
         StoreStats {
-            key_count: self.data.len(),
+            key_count: keys.len(),
             ops_count: self.ops_count,
         }
     }
 
     pub fn backup(&mut self, backup_path: &str) -> io::Result<()> {
         let mut file = File::create(backup_path)?;
-        let keys: Vec<String> = self.data.keys().cloned().collect();
+        let keys = self.keys();
         for k in keys {
             if let Some(sv) = self.data.get(&k) {
                 let ttl = sv.expires_at.and_then(|expiry| {
