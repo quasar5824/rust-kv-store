@@ -3,6 +3,7 @@ use std::fs::{File, OpenOptions, rename};
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Command {
@@ -538,5 +539,36 @@ impl Transaction {
 
     pub fn expire(&mut self, key: String, ttl: Option<u64>) {
         self.pending.push(Command::Expire { key, ttl });
+    }
+}
+
+pub struct AsyncKvStore {
+    inner: Arc<Mutex<KvStore>>,
+}
+
+impl AsyncKvStore {
+    pub async fn open(path: String) -> io::Result<Self> {
+        let store = tokio::task::spawn_blocking(move || KvStore::open(&path))
+            .await
+            .expect("Panic in spawn_blocking")?;
+        Ok(AsyncKvStore {
+            inner: Arc::new(Mutex::new(store)),
+        })
+    }
+
+    pub async fn set(&self, key: String, value: String) -> io::Result<()> {
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || {
+            let mut store = inner.lock().unwrap();
+            store.set(&key, &value)
+        }).await.expect("Panic in spawn_blocking")
+    }
+
+    pub async fn get(&self, key: String) -> Option<String> {
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || {
+            let mut store = inner.lock().unwrap();
+            store.get(&key).cloned()
+        }).await.expect("Panic in spawn_blocking")
     }
 }

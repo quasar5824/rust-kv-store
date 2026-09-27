@@ -1,4 +1,4 @@
-use crate::store::{KvStore, StoreEvent};
+use crate::store::{KvStore, StoreEvent, AsyncKvStore};
 use std::thread;
 use std::time::Duration;
 use std::fs;
@@ -216,4 +216,16 @@ fn test_observers() {
     assert_eq!(result.len(), 2);
     assert_eq!(result[0], ("obs_key".to_string(), StoreEvent::Set));
     assert_eq!(result[1], ("obs_key".to_string(), StoreEvent::Delete));
+}
+
+#[tokio::test]
+async fn test_async_store() {
+    let path = "async_test.db";
+    let _ = fs::remove_file(path);
+    let store = AsyncKvStore::open(path.to_string()).await.unwrap();
+    
+    store.set("async_key".to_string(), "async_val".to_string()).await.unwrap();
+    assert_eq!(store.get("async_key".to_string()).await, Some("async_val".to_string()));
+    
+    let _ = fs::remove_file(path);
 }
