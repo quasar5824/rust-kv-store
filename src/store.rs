@@ -501,7 +501,11 @@ impl KvStore {
     }
 
     pub fn backup(&mut self, backup_path: &str) -> io::Result<()> {
-        let mut file = File::create(backup_path)?;
+        self.snapshot(backup_path)
+    }
+
+    pub fn snapshot(&mut self, snapshot_path: &str) -> io::Result<()> {
+        let mut file = File::create(snapshot_path)?;
         let keys = self.keys();
         for k in keys {
             if let Some(sv) = self.data.get(&k) {
