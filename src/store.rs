@@ -4,6 +4,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use crc32fast::Hasher;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Command {
@@ -11,6 +12,12 @@ pub enum Command {
     Delete { key: String },
     Incr { key: String, delta: i64 },
     Expire { key: String, ttl: Option<u64> },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct LogEntry {
+    checksum: u32,
+    command: Command,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,26 +56,31 @@ impl KvStore {
             let reader = BufReader::new(f);
             for line in reader.lines() {
                 let line = line?;
-                if let Ok(cmd) = serde_json::from_str::<Command>(&line) {
-                    ops_count += 1;
-                    match cmd {
-                        Command::Set { key, value, ttl } => {
-                            let expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
-                            data.insert(key, StoreValue { value, expires_at });
-                        }
-                        Command::Delete { key } => {
-                            data.remove(&key);
-                        }
-                        Command::Incr { key, delta } => {
-                            let current_val = data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
-                            let new_val = current_val + delta;
-                            data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
-                        }
-                        Command::Expire { key, ttl } => {
-                            if let Some(sv) = data.get_mut(&key) {
-                                sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
+                    if Self::verify_checksum(&entry) {
+                        ops_count += 1;
+                        match entry.command {
+                            Command::Set { key, value, ttl } => {
+                                let expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                                data.insert(key, StoreValue { value, expires_at });
+                            }
+                            Command::Delete { key } => {
+                                data.remove(&key);
+                            }
+                            Command::Incr { key, delta } => {
+                                let current_val = data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
+                                let new_val = current_val + delta;
+                                data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
+                            }
+                            Command::Expire { key, ttl } => {
+                                if let Some(sv) = data.get_mut(&key) {
+                                    sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                                }
                             }
                         }
+                    } else {
+                        // In a production system, we might trigger a recovery process here
+                        eprintln!("Checksum mismatch detected in log file");
                     }
                 }
             }
@@ -86,6 +98,20 @@ impl KvStore {
             ops_count,
             observers: HashMap::new(),
         })
+    }
+
+    fn verify_checksum(entry: &LogEntry) -> bool {
+        let cmd_json = serde_json::to_string(&entry.command).unwrap();
+        let mut hasher = Hasher::new();
+        hasher.update(cmd_json.as_bytes());
+        hasher.finalize() == entry.checksum
+    }
+
+    fn compute_checksum(cmd: &Command) -> u32 {
+        let cmd_json = serde_json::to_string(cmd).unwrap();
+        let mut hasher = Hasher::new();
+        hasher.update(cmd_json.as_bytes());
+        hasher.finalize()
     }
 
     pub fn add_observer<F>(&mut self, key: &str, callback: F)
@@ -200,7 +226,11 @@ impl KvStore {
     pub fn batch(&mut self, commands: Vec<Command>) -> io::Result<()> {
         let mut buffer = Vec::new();
         for cmd in &commands {
-            let serialized = serde_json::to_string(cmd).unwrap();
+            let entry = LogEntry {
+                checksum: Self::compute_checksum(cmd),
+                command: cmd.clone(),
+            };
+            let serialized = serde_json::to_string(&entry).unwrap();
             buffer.extend_from_slice(serialized.as_bytes());
             buffer.extend_from_slice(b"\n");
         }
@@ -440,7 +470,11 @@ impl KvStore {
                     value: sv.value.clone(),
                     ttl,
                 };
-                let serialized = serde_json::to_string(&cmd).unwrap();
+                let entry = LogEntry {
+                    checksum: Self::compute_checksum(&cmd),
+                    command: cmd,
+                };
+                let serialized = serde_json::to_string(&entry).unwrap();
                 new_log.write_all(serialized.as_bytes())?;
                 new_log.write_all(b"\n")?;
             }
@@ -484,7 +518,11 @@ impl KvStore {
                     value: sv.value.clone(),
                     ttl,
                 };
-                let serialized = serde_json::to_string(&cmd).unwrap();
+                let entry = LogEntry {
+                    checksum: Self::compute_checksum(&cmd),
+                    command: cmd,
+                };
+                let serialized = serde_json::to_string(&entry).unwrap();
                 file.write_all(serialized.as_bytes())?;
                 file.write_all(b"\n")?;
             }
@@ -499,8 +537,10 @@ impl KvStore {
 
         for line in reader.lines() {
             let line = line?;
-            if let Ok(cmd) = serde_json::from_str::<Command>(&line) {
-                commands.push(cmd);
+            if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
+                if Self::verify_checksum(&entry) {
+                    commands.push(entry.command);
+                }
             }
         }
 
