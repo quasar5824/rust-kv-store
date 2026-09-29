@@ -31,6 +31,7 @@ pub enum StoreEvent {
 pub struct StoreStats {
     pub key_count: usize,
     pub ops_count: usize,
+    pub corrupted_entries: usize,
 }
 
 struct StoreValue {
@@ -43,6 +44,7 @@ pub struct KvStore {
     log: File,
     path: String,
     ops_count: usize,
+    corrupted_entries: usize,
     observers: HashMap<String, Vec<Box<dyn Fn(&str, StoreEvent) + Send + Sync>>>,
 }
 
@@ -50,6 +52,7 @@ impl KvStore {
     pub fn open(path: &str) -> io::Result<Self> {
         let mut data = HashMap::new();
         let mut ops_count = 0;
+        let mut corrupted_entries = 0;
         
         let file = File::open(path);
         if let Ok(f) = file {
@@ -79,8 +82,10 @@ impl KvStore {
                             }
                         }
                     } else {
-                        eprintln!("Checksum mismatch detected in log file");
+                        corrupted_entries += 1;
                     }
+                } else {
+                    corrupted_entries += 1;
                 }
             }
         }
@@ -95,6 +100,7 @@ impl KvStore {
             log,
             path: path.to_string(),
             ops_count,
+            corrupted_entries,
             observers: HashMap::new(),
         })
     }
@@ -417,6 +423,7 @@ impl KvStore {
     pub fn clear(&mut self) -> io::Result<()> {
         self.data.clear();
         self.ops_count = 0;
+        self.corrupted_entries = 0;
         let file = OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -490,6 +497,7 @@ impl KvStore {
         
         self.log = log;
         self.ops_count = self.data.len();
+        self.corrupted_entries = 0;
         Ok(())
     }
 
@@ -498,6 +506,7 @@ impl KvStore {
         StoreStats {
             key_count: keys.len(),
             ops_count: self.ops_count,
+            corrupted_entries: self.corrupted_entries,
         }
     }
 
