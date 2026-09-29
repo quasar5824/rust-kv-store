@@ -408,8 +408,10 @@ impl KvStore {
         results
     }
 
-    pub fn cursor(&mut self) -> Vec<(String, String)> {
-        self.get_all_cloned()
+    pub fn cursor(&mut self) -> StoreCursor {
+        StoreCursor {
+            iter: self.data.iter(),
+        }
     }
 
     pub fn clear(&mut self) -> io::Result<()> {
@@ -672,5 +674,17 @@ impl AsyncKvStore {
             let mut store = inner.write().unwrap();
             store.clear_expired()
         }).await.expect("Panic in spawn_blocking")
+    }
+}
+
+pub struct StoreCursor<'a> {
+    iter: std::collections::hash_map::Iter<'a, String, StoreValue>,
+}
+
+impl<'a> Iterator for StoreCursor<'a> {
+    type Item = (&'a String, &'a String);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|(k, v)| (k, &v.value))
     }
 }
