@@ -79,7 +79,6 @@ impl KvStore {
                             }
                         }
                     } else {
-                        // In a production system, we might trigger a recovery process here
                         eprintln!("Checksum mismatch detected in log file");
                     }
                 }
@@ -612,7 +611,6 @@ impl ConcurrentKvStore {
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
-        // We need a write lock because KvStore::get can perform lazy deletion of expired keys
         let mut store = self.inner.write().unwrap();
         store.get(key).cloned()
     }
@@ -630,6 +628,11 @@ impl ConcurrentKvStore {
     pub fn stats(&self) -> StoreStats {
         let mut store = self.inner.write().unwrap();
         store.stats()
+    }
+
+    pub fn clear_expired(&self) -> io::Result<usize> {
+        let mut store = self.inner.write().unwrap();
+        store.clear_expired()
     }
 }
 
@@ -660,6 +663,14 @@ impl AsyncKvStore {
         tokio::task::spawn_blocking(move || {
             let mut store = inner.write().unwrap();
             store.get(&key).cloned()
+        }).await.expect("Panic in spawn_blocking")
+    }
+
+    pub async fn clear_expired(&self) -> io::Result<usize> {
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || {
+            let mut store = inner.write().unwrap();
+            store.clear_expired()
         }).await.expect("Panic in spawn_blocking")
     }
 }
