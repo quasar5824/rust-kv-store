@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions, rename};
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::{Duration, SystemTime};
@@ -577,9 +577,6 @@ impl KvStore {
         self.log.sync_all()
     }
 
-    /// Verifies that the current in-memory state is consistent with the on-disk log.
-    /// Returns a list of keys that are either missing or have different values than expected
-    /// based on the last valid log entry.
     pub fn validate_integrity(&mut self) -> io::Result<Vec<String>> {
         let file = File::open(&self.path)?;
         let reader = BufReader::new(file);
@@ -613,7 +610,6 @@ impl KvStore {
             }
         }
 
-        // Check for keys in memory that shouldn't be there
         for k in self.data.keys() {
             if !expected_state.contains_key(k) {
                 corrupted_keys.push(k.clone());
@@ -729,6 +725,72 @@ impl AsyncKvStore {
             let mut store = inner.write().unwrap();
             store.clear_expired()
         }).await.expect("Panic in spawn_blocking")
+    }
+}
+
+pub struct CachedKvStore {
+    store: KvStore,
+    cache: HashMap<String, String>,
+    order: VecDeque<String>,
+    capacity: usize,
+}
+
+impl CachedKvStore {
+    pub fn new(store: KvStore, capacity: usize) -> Self {
+        Self {
+            store,
+            cache: HashMap::with_capacity(capacity),
+            order: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    pub fn get(&mut self, key: &str) -> Option<String> {
+        if let Some(val) = self.cache.get(key) {
+            self.touch(key);
+            return Some(val.clone());
+        }
+
+        if let Some(val) = self.store.get(key) {
+            let val_cloned = val.clone();
+            self.put_cache(key.to_string(), val_cloned.clone());
+            return Some(val_cloned);
+        }
+        None
+    }
+
+    pub fn set(&mut self, key: &str, value: &str) -> io::Result<()> {
+        self.store.set(key, value)?;
+        self.put_cache(key.to_string(), value.to_string());
+        Ok(())
+    }
+
+    pub fn delete(&mut self, key: &str) -> io::Result<()> {
+        self.store.delete(key)?;
+        self.cache.remove(key);
+        self.order.retain(|k| k != key);
+        Ok(())
+    }
+
+    fn touch(&mut self, key: &str) {
+        if let Some(pos) = self.order.iter().position(|k| k == key) {
+            self.order.remove(pos);
+            self.order.push_back(key.to_string());
+        }
+    }
+
+    fn put_cache(&mut self, key: String, value: String) {
+        if self.cache.contains_key(&key) {
+            self.touch(&key);
+        } else {
+            if self.cache.len() >= self.capacity {
+                if let Some(oldest) = self.order.pop_front() {
+                    self.cache.remove(&oldest);
+                }
+            }
+            self.order.push_back(key.clone());
+        }
+        self.cache.insert(key, value);
     }
 }
 
