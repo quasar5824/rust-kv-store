@@ -576,6 +576,52 @@ impl KvStore {
     pub fn persist(&mut self) -> io::Result<()> {
         self.log.sync_all()
     }
+
+    /// Verifies that the current in-memory state is consistent with the on-disk log.
+    /// Returns a list of keys that are either missing or have different values than expected
+    /// based on the last valid log entry.
+    pub fn validate_integrity(&mut self) -> io::Result<Vec<String>> {
+        let file = File::open(&self.path)?;
+        let reader = BufReader::new(file);
+        let mut expected_state: HashMap<String, String> = HashMap::new();
+        let mut corrupted_keys = Vec::new();
+
+        for line in reader.lines() {
+            let line = line?;
+            if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
+                if Self::verify_checksum(&entry) {
+                    match entry.command {
+                        Command::Set { key, value, .. } => {
+                            expected_state.insert(key, value);
+                        }
+                        Command::Delete { key } => {
+                            expected_state.remove(&key);
+                        }
+                        Command::Incr { key, delta } => {
+                            let current = expected_state.get(&key).map(|v| v.parse::<i64>().unwrap_or(0)).unwrap_or(0);
+                            expected_state.insert(key, (current + delta).to_string());
+                        }
+                        Command::Expire { .. } => {}
+                    }
+                }
+            }
+        }
+
+        for (k, v) in &expected_state {
+            if self.get(k) != Some(v) {
+                corrupted_keys.push(k.clone());
+            }
+        }
+
+        // Check for keys in memory that shouldn't be there
+        for k in self.data.keys() {
+            if !expected_state.contains_key(k) {
+                corrupted_keys.push(k.clone());
+            }
+        }
+
+        Ok(corrupted_keys)
+    }
 }
 
 pub struct Transaction {
