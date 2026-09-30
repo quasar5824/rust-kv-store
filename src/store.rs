@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::fs::{File, OpenOptions, rename};
+use std::fs::{File, OpenOptions, rename, metadata};
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,14 @@ pub struct StoreStats {
     pub key_count: usize,
     pub ops_count: usize,
     pub corrupted_entries: usize,
+}
+
+#[derive(Debug)]
+pub struct StoreHealth {
+    pub log_size_bytes: u64,
+    pub fragmentation_ratio: f64,
+    pub is_healthy: bool,
+    pub suggested_action: Option<String>,
 }
 
 struct StoreValue {
@@ -508,6 +516,36 @@ impl KvStore {
             ops_count: self.ops_count,
             corrupted_entries: self.corrupted_entries,
         }
+    }
+
+    pub fn health_check(&self) -> io::Result<StoreHealth> {
+        let meta = metadata(&self.path)?;
+        let log_size_bytes = meta.len();
+        
+        let live_keys = self.data.len();
+        let fragmentation_ratio = if self.ops_count > 0 {
+            1.0 - (live_keys as f64 / self.ops_count as f64)
+        } else {
+            0.0
+        };
+
+        let mut is_healthy = true;
+        let mut suggested_action = None;
+
+        if fragmentation_ratio > 0.5 {
+            is_healthy = false;
+            suggested_action = Some("Run compact() to reduce log size".to_string());
+        } else if self.corrupted_entries > 0 {
+            is_healthy = false;
+            suggested_action = Some("Run validate_integrity() to check for corruption".to_string());
+        }
+
+        Ok(StoreHealth {
+            log_size_bytes,
+            fragmentation_ratio,
+            is_healthy,
+            suggested_action,
+        })
     }
 
     pub fn backup(&mut self, backup_path: &str) -> io::Result<()> {
