@@ -443,7 +443,6 @@ impl KvStore {
 
     pub fn scan(&mut self, prefix: &str) -> Vec<(String, String)> {
         let mut results = Vec::new();
-        // Use sorted_keys to find prefix range
         let start_idx = self.sorted_keys.binary_search_by(|k| k.cmp(prefix)).unwrap_or_else(|e| e);
         
         for &k in &self.sorted_keys[start_idx..] {
@@ -707,7 +706,7 @@ impl KvStore {
                             let current = expected_state.get(&key).map(|v| v.parse::<i64>().unwrap_or(0)).unwrap_or(0);
                             expected_state.insert(key, (current + delta).to_string());
                         }
-                        Command::Expire { .. } | Command::ExpireAt { .. } => {}
+                        Command::Expire { .. } | Command::ExpireAt { .. } =>{}
                     }
                 }
             }
@@ -726,6 +725,11 @@ impl KvStore {
         }
 
         Ok(corrupted_keys)
+    }
+
+    pub fn validate_consistency(&mut self) -> io::Result<bool> {
+        let corrupted = self.validate_integrity()?;
+        Ok(corrupted.is_empty())
     }
 
     fn rebuild_index(&mut self) {
@@ -823,7 +827,6 @@ impl AsyncKvStore {
         
         let inner = Arc::new(RwLock::new(store));
         
-        // Start background cleanup task
         let inner_clone = Arc::clone(&inner);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
