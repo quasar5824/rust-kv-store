@@ -9,9 +9,11 @@ use crc32fast::Hasher;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Command {
     Set { key: String, value: String, ttl: Option<u64> },
+    SetAt { key: String, value: String, expires_at: SystemTime },
     Delete { key: String },
     Incr { key: String, delta: i64 },
     Expire { key: String, ttl: Option<u64> },
+    ExpireAt { key: String, expires_at: SystemTime },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -75,6 +77,9 @@ impl KvStore {
                                 let expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
                                 data.insert(key, StoreValue { value, expires_at });
                             }
+                            Command::SetAt { key, value, expires_at } => {
+                                data.insert(key, StoreValue { value, expires_at: Some(expires_at) });
+                            }
                             Command::Delete { key } => {
                                 data.remove(&key);
                             }
@@ -86,6 +91,11 @@ impl KvStore {
                             Command::Expire { key, ttl } => {
                                 if let Some(sv) = data.get_mut(&key) {
                                     sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                                }
+                            }
+                            Command::ExpireAt { key, expires_at } => {
+                                if let Some(sv) = data.get_mut(&key) {
+                                    sv.expires_at = Some(expires_at);
                                 }
                             }
                         }
@@ -151,6 +161,14 @@ impl KvStore {
             key: key.to_string(), 
             value: value.to_string(),
             ttl
+        }])
+    }
+
+    pub fn set_at(&mut self, key: &str, value: &str, expires_at: SystemTime) -> io::Result<()> {
+        self.batch(vec![Command::SetAt { 
+            key: key.to_string(), 
+            value: value.to_string(),
+            expires_at
         }])
     }
 
@@ -259,6 +277,10 @@ impl KvStore {
                     self.data.insert(key.clone(), StoreValue { value, expires_at });
                     self.notify(&key, StoreEvent::Set);
                 }
+                Command::SetAt { key, value, expires_at } => {
+                    self.data.insert(key.clone(), StoreValue { value, expires_at: Some(expires_at) });
+                    self.notify(&key, StoreEvent::Set);
+                }
                 Command::Delete { key } => {
                     self.data.remove(&key);
                     self.notify(&key, StoreEvent::Delete);
@@ -272,6 +294,12 @@ impl KvStore {
                 Command::Expire { key, ttl } => {
                     if let Some(sv) = self.data.get_mut(&key) {
                         sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                        self.notify(&key, StoreEvent::Expire);
+                    }
+                }
+                Command::ExpireAt { key, expires_at } => {
+                    if let Some(sv) = self.data.get_mut(&key) {
+                        sv.expires_at = Some(expires_at);
                         self.notify(&key, StoreEvent::Expire);
                     }
                 }
@@ -611,6 +639,17 @@ impl KvStore {
         Ok(true)
     }
 
+    pub fn expire_at(&mut self, key: &str, expires_at: SystemTime) -> io::Result<bool> {
+        if !self.exists(key) {
+            return Ok(false);
+        }
+        self.batch(vec![Command::ExpireAt { 
+            key: key.to_string(), 
+            expires_at 
+        }])?;
+        Ok(true)
+    }
+
     pub fn persist(&mut self) -> io::Result<()> {
         self.log.sync_all()
     }
@@ -629,6 +668,9 @@ impl KvStore {
                         Command::Set { key, value, .. } => {
                             expected_state.insert(key, value);
                         }
+                        Command::SetAt { key, value, .. } => {
+                            expected_state.insert(key, value);
+                        }
                         Command::Delete { key } => {
                             expected_state.remove(&key);
                         }
@@ -636,7 +678,7 @@ impl KvStore {
                             let current = expected_state.get(&key).map(|v| v.parse::<i64>().unwrap_or(0)).unwrap_or(0);
                             expected_state.insert(key, (current + delta).to_string());
                         }
-                        Command::Expire { .. } => {}
+                        Command::Expire { .. } | Command::ExpireAt { .. } => {}
                     }
                 }
             }
@@ -671,6 +713,10 @@ impl Transaction {
         self.pending.push(Command::Set { key, value, ttl });
     }
 
+    pub fn set_at(&mut self, key: String, value: String, expires_at: SystemTime) {
+        self.pending.push(Command::SetAt { key, value, expires_at });
+    }
+
     pub fn delete(&mut self, key: String) {
         self.pending.push(Command::Delete { key });
     }
@@ -681,6 +727,10 @@ impl Transaction {
 
     pub fn expire(&mut self, key: String, ttl: Option<u64>) {
         self.pending.push(Command::Expire { key, ttl });
+    }
+
+    pub fn expire_at(&mut self, key: String, expires_at: SystemTime) {
+        self.pending.push(Command::ExpireAt { key, expires_at });
     }
 }
 
@@ -736,8 +786,25 @@ impl AsyncKvStore {
         let store = tokio::task::spawn_blocking(move || KvStore::open(&path))
             .await
             .expect("Panic in spawn_blocking")?;
+        
+        let inner = Arc::new(RwLock::new(store));
+        
+        // Start background cleanup task
+        let inner_clone = Arc::clone(&inner);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let inner_task = Arc::clone(&inner_clone);
+                let _ = tokio::task::spawn_blocking(move || {
+                    let mut store = inner_task.write().unwrap();
+                    let _ = store.clear_expired();
+                }).await;
+            }
+        });
+
         Ok(AsyncKvStore {
-            inner: Arc::new(RwLock::new(store)),
+            inner,
         })
     }
 
