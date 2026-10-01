@@ -51,6 +51,7 @@ struct StoreValue {
 
 pub struct KvStore {
     data: HashMap<String, StoreValue>,
+    sorted_keys: Vec<String>,
     log: File,
     path: String,
     ops_count: usize,
@@ -113,14 +114,17 @@ impl KvStore {
             .append(true)
             .open(path)?;
 
-        Ok(KvStore {
+        let mut store = KvStore {
             data,
+            sorted_keys: Vec::new(),
             log,
             path: path.to_string(),
             ops_count,
             corrupted_entries,
             observers: HashMap::new(),
-        })
+        };
+        store.rebuild_index();
+        Ok(store)
     }
 
     fn verify_checksum(entry: &LogEntry) -> bool {
@@ -269,25 +273,37 @@ impl KvStore {
         self.log.write_all(&buffer)?;
         self.log.flush()?;
 
+        let mut index_changed = false;
         for cmd in commands {
             self.ops_count += 1;
             match cmd {
                 Command::Set { key, value, ttl } => {
                     let expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
+                    if !self.data.contains_key(&key) {
+                        index_changed = true;
+                    }
                     self.data.insert(key.clone(), StoreValue { value, expires_at });
                     self.notify(&key, StoreEvent::Set);
                 }
                 Command::SetAt { key, value, expires_at } => {
+                    if !self.data.contains_key(&key) {
+                        index_changed = true;
+                    }
                     self.data.insert(key.clone(), StoreValue { value, expires_at: Some(expires_at) });
                     self.notify(&key, StoreEvent::Set);
                 }
                 Command::Delete { key } => {
-                    self.data.remove(&key);
+                    if self.data.remove(&key).is_some() {
+                        index_changed = true;
+                    }
                     self.notify(&key, StoreEvent::Delete);
                 }
                 Command::Incr { key, delta } => {
                     let current_val = self.data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
                     let new_val = current_val + delta;
+                    if !self.data.contains_key(&key) {
+                        index_changed = true;
+                    }
                     self.data.insert(key.clone(), StoreValue { value: new_val.to_string(), expires_at: None });
                     self.notify(&key, StoreEvent::Set);
                 }
@@ -304,6 +320,10 @@ impl KvStore {
                     }
                 }
             }
+        }
+        
+        if index_changed {
+            self.rebuild_index();
         }
         Ok(())
     }
@@ -334,6 +354,7 @@ impl KvStore {
             if let Some(expiry) = sv.expires_at {
                 if SystemTime::now() > expiry {
                     self.data.remove(key);
+                    self.sorted_keys.retain(|k| k != key);
                     self.notify(key, StoreEvent::Delete);
                     return None;
                 }
@@ -353,6 +374,7 @@ impl KvStore {
                 let now = SystemTime::now();
                 if now > expiry {
                     self.data.remove(key);
+                    self.sorted_keys.retain(|k| k != key);
                     self.notify(key, StoreEvent::Delete);
                     return None;
                 }
@@ -420,13 +442,16 @@ impl KvStore {
     }
 
     pub fn scan(&mut self, prefix: &str) -> Vec<(String, String)> {
-        let keys = self.keys();
         let mut results = Vec::new();
-        for k in keys {
-            if k.starts_with(prefix) {
-                if let Some(v) = self.get(&k) {
-                    results.push((k, v.clone()));
-                }
+        // Use sorted_keys to find prefix range
+        let start_idx = self.sorted_keys.binary_search_by(|k| k.cmp(prefix)).unwrap_or_else(|e| e);
+        
+        for &k in &self.sorted_keys[start_idx..] {
+            if !k.starts_with(prefix) {
+                break;
+            }
+            if let Some(v) = self.get(&k) {
+                results.push((k.to_string(), v.clone()));
             }
         }
         results
@@ -437,16 +462,17 @@ impl KvStore {
     }
 
     pub fn range(&mut self, start: &str, end: &str) -> Vec<(String, String)> {
-        let keys = self.keys();
         let mut results = Vec::new();
-        for k in keys {
-            if k >= start && k <= end {
-                if let Some(v) = self.get(&k) {
-                    results.push((k, v.clone()));
-                }
+        let start_idx = self.sorted_keys.binary_search_by(|k| k.cmp(start)).unwrap_or_else(|e| e);
+        
+        for &k in &self.sorted_keys[start_idx..] {
+            if k > end {
+                break;
+            }
+            if let Some(v) = self.get(&k) {
+                results.push((k.to_string(), v.clone()));
             }
         }
-        results.sort_by(|a, b| a.0.cmp(&b.0));
         results
     }
 
@@ -458,6 +484,7 @@ impl KvStore {
 
     pub fn clear(&mut self) -> io::Result<()> {
         self.data.clear();
+        self.sorted_keys.clear();
         self.ops_count = 0;
         self.corrupted_entries = 0;
         let file = OpenOptions::new()
@@ -479,6 +506,7 @@ impl KvStore {
         let count = expired_keys.len();
         for k in expired_keys {
             self.data.remove(&k);
+            self.sorted_keys.retain(|key| key != &k);
             self.notify(&k, StoreEvent::Delete);
         }
 
@@ -534,6 +562,7 @@ impl KvStore {
         self.log = log;
         self.ops_count = self.data.len();
         self.corrupted_entries = 0;
+        self.rebuild_index();
         Ok(())
     }
 
@@ -697,6 +726,11 @@ impl KvStore {
         }
 
         Ok(corrupted_keys)
+    }
+
+    fn rebuild_index(&mut self) {
+        self.sorted_keys = self.data.keys().cloned().collect();
+        self.sorted_keys.sort();
     }
 }
 
