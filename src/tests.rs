@@ -1,4 +1,4 @@
-use crate::store::{KvStore, StoreEvent, AsyncKvStore};
+use crate::store::{KvStore, StoreEvent, AsyncKvStore, CachedKvStore};
 use std::thread;
 use std::time::Duration;
 use std::fs;
@@ -228,4 +228,28 @@ async fn test_async_store() {
     assert_eq!(store.get("async_key".to_string()).await, Some("async_val".to_string()));
     
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn test_cached_kv_lru_eviction() {
+    let store = setup_store();
+    let mut cached = CachedKvStore::new(store, 2);
+
+    cached.set("k1", "v1").unwrap();
+    cached.set("k2", "v2").unwrap();
+    
+    // Access k1 to make it most recent
+    cached.get("k1").unwrap();
+    
+    // Add k3, should evict k2 (LRU)
+    cached.set("k3", "v3").unwrap();
+    
+    // Check if k2 is evicted from cache by checking hits/misses
+    // We reset stats effectively by looking at current counts
+    let (h1, m1) = cached.cache_stats();
+    cached.get("k2").unwrap(); // This should be a miss
+    let (h2, m2) = cached.cache_stats();
+    
+    assert!(m2 > m1, "k2 should have been a cache miss");
+    assert_eq!(cached.get("k1"), Some("v1".to_string()));
 }
