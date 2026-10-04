@@ -888,11 +888,18 @@ impl AsyncKvStore {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CacheEntry {
+    value: String,
+    priority: u32,
+}
+
 pub struct CachedKvStore {
     store: KvStore,
-    cache: HashMap<String, String>,
-    order: VecDeque<String>,
+    cache: HashMap<String, CacheEntry>,
     capacity: usize,
+    hits: u64,
+    misses: u64,
 }
 
 impl CachedKvStore {
@@ -900,57 +907,64 @@ impl CachedKvStore {
         Self {
             store,
             cache: HashMap::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
             capacity,
+            hits: 0,
+            misses: 0,
         }
     }
 
     pub fn get(&mut self, key: &str) -> Option<String> {
-        if let Some(val) = self.cache.get(key) {
-            self.touch(key);
-            return Some(val.clone());
+        if let Some(entry) = self.cache.get(key) {
+            self.hits += 1;
+            return Some(entry.value.clone());
         }
 
+        self.misses += 1;
         if let Some(val) = self.store.get(key) {
             let val_cloned = val.clone();
-            self.put_cache(key.to_string(), val_cloned.clone());
+            self.put_cache(key.to_string(), val_cloned.clone(), 1);
             return Some(val_cloned);
         }
         None
     }
 
-    pub fn set(&mut self, key: &str, value: &str) -> io::Result<()> {
+    pub fn set(&mut self, key: &str, value: &str, priority: u32) -> io::Result<()> {
         self.store.set(key, value)?;
-        self.put_cache(key.to_string(), value.to_string());
+        self.put_cache(key.to_string(), value.to_string(), priority);
         Ok(())
     }
 
     pub fn delete(&mut self, key: &str) -> io::Result<()> {
         self.store.delete(key)?;
         self.cache.remove(key);
-        self.order.retain(|k| k != key);
         Ok(())
     }
 
-    fn touch(&mut self, key: &str) {
-        if let Some(pos) = self.order.iter().position(|k| k == key) {
-            self.order.remove(pos);
-            self.order.push_back(key.to_string());
-        }
+    pub fn cache_stats(&self) -> (u64, u64) {
+        (self.hits, self.misses)
     }
 
-    fn put_cache(&mut self, key: String, value: String) {
-        if self.cache.contains_key(&key) {
-            self.touch(&key);
-        } else {
-            if self.cache.len() >= self.capacity {
-                if let Some(oldest) = self.order.pop_front() {
-                    self.cache.remove(&oldest);
-                }
-            }
-            self.order.push_back(key.clone());
+    fn put_cache(&mut self, key: String, value: String, priority: u32) {
+        if self.cache.len() >= self.capacity && !self.cache.contains_key(&key) {
+            self.evict_lowest_priority();
         }
-        self.cache.insert(key, value);
+        self.cache.insert(key, CacheEntry { value, priority });
+    }
+
+    fn evict_lowest_priority(&mut self) {
+        let mut lowest_priority = u32::MAX;
+        let mut key_to_evict = None;
+
+        for (key, entry) in &self.cache {
+            if entry.priority < lowest_priority {
+                lowest_priority = entry.priority;
+                key_to_evict = Some(key.clone());
+            }
+        }
+
+        if let Some(key) = key_to_evict {
+            self.cache.remove(&key);
+        }
     }
 }
 
