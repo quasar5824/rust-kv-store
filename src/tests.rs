@@ -37,6 +37,22 @@ fn test_incr() {
 }
 
 #[test]
+fn test_decr() {
+    let mut store = setup_store();
+    store.set("counter", "10").unwrap();
+    assert_eq!(store.decr("counter", 3).unwrap(), 7);
+    assert_eq!(store.get("counter"), Some(&"7".to_string()));
+}
+
+#[test]
+fn test_incr_float() {
+    let mut store = setup_store();
+    store.set("fcounter", "1.5").unwrap();
+    assert_eq!(store.incr_float("fcounter", 2.2).unwrap(), 3.7);
+    assert_eq!(store.get("fcounter").unwrap(), "3.7");
+}
+
+#[test]
 fn test_transaction() {
     let mut store = setup_store();
     store.transaction(|tx| {

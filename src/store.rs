@@ -12,6 +12,7 @@ pub enum Command {
     SetAt { key: String, value: String, expires_at: SystemTime },
     Delete { key: String },
     Incr { key: String, delta: i64 },
+    IncrFloat { key: String, delta: f64 },
     Expire { key: String, ttl: Option<u64> },
     ExpireAt { key: String, expires_at: SystemTime },
 }
@@ -86,6 +87,11 @@ impl KvStore {
                             }
                             Command::Incr { key, delta } => {
                                 let current_val = data.get(&key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
+                                let new_val = current_val + delta;
+                                data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
+                            }
+                            Command::IncrFloat { key, delta } => {
+                                let current_val = data.get(&key).map(|sv| sv.value.parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0);
                                 let new_val = current_val + delta;
                                 data.insert(key, StoreValue { value: new_val.to_string(), expires_at: None });
                             }
@@ -307,6 +313,15 @@ impl KvStore {
                     self.data.insert(key.clone(), StoreValue { value: new_val.to_string(), expires_at: None });
                     self.notify(&key, StoreEvent::Set);
                 }
+                Command::IncrFloat { key, delta } => {
+                    let current_val = self.data.get(&key).map(|sv| sv.value.parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0);
+                    let new_val = current_val + delta;
+                    if !self.data.contains_key(&key) {
+                        index_changed = true;
+                    }
+                    self.data.insert(key.clone(), StoreValue { value: new_val.to_string(), expires_at: None });
+                    self.notify(&key, StoreEvent::Set);
+                }
                 Command::Expire { key, ttl } => {
                     if let Some(sv) = self.data.get_mut(&key) {
                         sv.expires_at = ttl.map(|secs| SystemTime::now() + Duration::from_secs(secs));
@@ -332,6 +347,17 @@ impl KvStore {
         let current_val = self.data.get(key).map(|sv| sv.value.parse::<i64>().unwrap_or(0)).unwrap_or(0);
         let new_val = current_val + delta;
         self.batch(vec![Command::Incr { key: key.to_string(), delta }])?;
+        Ok(new_val)
+    }
+
+    pub fn decr(&mut self, key: &str, delta: i64) -> io::Result<i64> {
+        self.incr(key, -delta)
+    }
+
+    pub fn incr_float(&mut self, key: &str, delta: f64) -> io::Result<f64> {
+        let current_val = self.data.get(key).map(|sv| sv.value.parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0);
+        let new_val = current_val + delta;
+        self.batch(vec![Command::IncrFloat { key: key.to_string(), delta }])?;
         Ok(new_val)
     }
 
@@ -706,6 +732,10 @@ impl KvStore {
                             let current = expected_state.get(&key).map(|v| v.parse::<i64>().unwrap_or(0)).unwrap_or(0);
                             expected_state.insert(key, (current + delta).to_string());
                         }
+                        Command::IncrFloat { key, delta } => {
+                            let current = expected_state.get(&key).map(|v| v.parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0);
+                            expected_state.insert(key, (current + delta).to_string());
+                        }
                         Command::Expire { .. } | Command::ExpireAt { .. } =>{}
                     }
                 }
@@ -779,6 +809,10 @@ impl Transaction {
 
     pub fn incr(&mut self, key: String, delta: i64) {
         self.pending.push(Command::Incr { key, delta });
+    }
+
+    pub fn incr_float(&mut self, key: String, delta: f64) {
+        self.pending.push(Command::IncrFloat { key, delta });
     }
 
     pub fn expire(&mut self, key: String, ttl: Option<u64>) {
