@@ -732,6 +732,24 @@ impl KvStore {
         Ok(corrupted.is_empty())
     }
 
+    pub fn validate_log_checksums(&self) -> io::Result<usize> {
+        let file = File::open(&self.path)?;
+        let reader = BufReader::new(file);
+        let mut corrupted_count = 0;
+
+        for line in reader.lines() {
+            let line = line?;
+            if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
+                if !Self::verify_checksum(&entry) {
+                    corrupted_count += 1;
+                }
+            } else {
+                corrupted_count += 1;
+            }
+        }
+        Ok(corrupted_count)
+    }
+
     fn rebuild_index(&mut self) {
         self.sorted_keys = self.data.keys().cloned().collect();
         self.sorted_keys.sort();
