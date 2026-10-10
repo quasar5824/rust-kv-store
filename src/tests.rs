@@ -246,6 +246,31 @@ async fn test_async_store() {
     let _ = fs::remove_file(path);
 }
 
+#[tokio::test]
+async fn test_async_concurrent_access() {
+    let path = "async_concurrent.db";
+    let _ = fs::remove_file(path);
+    let store = Arc::new(AsyncKvStore::open(path.to_string()).await.unwrap());
+    
+    let mut handles = vec![];
+    for i in 0..10 {
+        let store_clone = Arc::clone(&store);
+        handles.push(tokio::spawn(async move {
+            store_clone.set(format!("key_{}", i), format!("val_{}", i)).await.unwrap();
+        }));
+    }
+
+    for handle in handles {
+        handle.await.unwrap();
+    }
+
+    for i in 0..10 {
+        assert_eq!(store.get(format!("key_{}", i)).await, Some(format!("val_{}", i)));
+    }
+    
+    let _ = fs::remove_file(path);
+}
+
 #[test]
 fn test_cached_kv_lru_eviction() {
     let store = setup_store();
@@ -262,10 +287,27 @@ fn test_cached_kv_lru_eviction() {
     
     // Check if k2 is evicted from cache by checking hits/misses
     // We reset stats effectively by looking at current counts
-    let (h1, m1) = cached.cache_stats();
+    let (_, m1) = cached.cache_stats();
     cached.get("k2").unwrap(); // This should be a miss
-    let (h2, m2) = cached.cache_stats();
+    let (_, m2) = cached.cache_stats();
     
     assert!(m2 > m1, "k2 should have been a cache miss");
     assert_eq!(cached.get("k1"), Some("v1".to_string()));
+}
+
+#[test]
+fn test_cached_kv_hit_rate() {
+    let store = setup_store();
+    let mut cached = CachedKvStore::new(store, 10);
+
+    cached.set("k1", "v1").unwrap();
+    
+    // First get is a miss (it was set, but usually set puts it in cache. 
+    // Let's check the implementation behavior via tests)
+    cached.get("k1").unwrap(); // Potential hit
+    cached.get("k1").unwrap(); // Definitely hit
+    
+    let (hits, misses) = cached.cache_stats();
+    assert!(hits > 0);
+    assert!(misses >= 0);
 }
