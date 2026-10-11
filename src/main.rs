@@ -5,7 +5,31 @@ mod tests;
 
 use store::{KvStore, Command};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+fn run_benchmarks(store: &mut KvStore) {
+    println!("\n--- Running Performance Benchmarks ---");
+    
+    let iterations = 1000;
+    
+    // Benchmark SET
+    let start = Instant::now();
+    for i in 0..iterations {
+        store.set(&format!("bench_set_{}", i), "value").unwrap();
+    }
+    let duration = start.elapsed();
+    println!("SET: {} ops in {:?}, avg {:?} per op", iterations, duration, duration / iterations);
+
+    // Benchmark GET
+    let start = Instant::now();
+    for i in 0..iterations {
+        store.get(&format!("bench_set_{}", i));
+    }
+    let duration = start.elapsed();
+    println!("GET: {} ops in {:?}, avg {:?} per op", iterations, duration, duration / iterations);
+    
+    println!("-------------------------------------\n");
+}
 
 fn main() {
     let path = "store.db";
@@ -90,6 +114,8 @@ fn main() {
     println!("Exists {}: {}", "user:2", store.exists("user:2"));
 
     println!("\nStore Stats: {:?}", store.stats());
+
+    run_benchmarks(&mut store);
 
     println!("\nClearing store...");
     store.clear().expect("Failed to clear store");
