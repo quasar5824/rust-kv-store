@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 fn run_benchmarks(store: &mut KvStore) {
     println!("\n--- Running Performance Benchmarks ---");
     
-    let iterations = 1000;
+    let iterations = 5000;
     
     // Benchmark SET
     let start = Instant::now();
@@ -18,7 +18,8 @@ fn run_benchmarks(store: &mut KvStore) {
         store.set(&format!("bench_set_{}", i), "value").unwrap();
     }
     let duration = start.elapsed();
-    println!("SET: {} ops in {:?}, avg {:?} per op", iterations, duration, duration / iterations);
+    println!("SET: {} ops in {:?}, avg {:?} per op, throughput {:.2} ops/s", 
+        iterations, duration, duration / iterations, iterations as f64 / duration.as_secs_f64());
 
     // Benchmark GET
     let start = Instant::now();
@@ -26,7 +27,22 @@ fn run_benchmarks(store: &mut KvStore) {
         store.get(&format!("bench_set_{}", i));
     }
     let duration = start.elapsed();
-    println!("GET: {} ops in {:?}, avg {:?} per op", iterations, duration, duration / iterations);
+    println!("GET: {} ops in {:?}, avg {:?} per op, throughput {:.2} ops/s", 
+        iterations, duration, duration / iterations, iterations as f64 / duration.as_secs_f64());
+
+    // Mixed Workload Benchmark (80% GET, 20% SET)
+    println!("Mixed Workload (80% GET, 20% SET): ");
+    let start = Instant::now();
+    for i in 0..iterations {
+        if i % 5 == 0 {
+            store.set(&format!("bench_mixed_{}", i), "value").unwrap();
+        } else {
+            store.get(&format!("bench_mixed_{}", i % 100));
+        }
+    }
+    let duration = start.elapsed();
+    println!("Mixed: {} ops in {:?}, throughput {:.2} ops/s", 
+        iterations, duration, iterations as f64 / duration.as_secs_f64());
     
     println!("-------------------------------------\n");
 }
