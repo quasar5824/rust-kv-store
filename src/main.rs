@@ -124,6 +124,12 @@ fn main() {
         println!("  {}: {}", k, v);
     }
 
+    println!("\nRetrieving all entries using get_all:");
+    let all_entries = store.get_all().expect("Failed to get all");
+    for (k, v) in all_entries {
+        println!("  {}: {}", k, v);
+    }
+
     let missing = "nonexistent";
     println!("Get {}: {:?}", missing, store.get(missing));
     println!("Exists {}: {}", missing, store.exists(missing));
