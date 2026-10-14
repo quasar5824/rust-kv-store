@@ -134,20 +134,30 @@ fn run_demo(store: &mut KvStore) {
     println!("Exists {}: {}", "user:2", store.exists("user:2"));
 
     println!("\nStore Stats: {:?}", store.stats());
+    
+    println!("\nTesting store clearing...");
+    store.clear().expect("Failed to clear store");
+    println!("Store cleared. Stats: {:?}", store.stats());
+}
+
+fn print_help() {
+    println!("Available Commands:");
+    println!("  set <key> <val> [ttl_secs] - Store a value with optional TTL");
+    println!("  get <key>                - Retrieve a value");
+    println!("  del <key>                - Delete a value");
+    println!("  incr <key> <amount>      - Increment a numeric value");
+    println!("  decr <key> <amount>      - Decrement a numeric value");
+    println!("  scan <prefix>            - Scan keys starting with prefix");
+    println!("  range <start> <end>     - Get keys in a range");
+    println!("  stats                    - Show store statistics");
+    println!("  clear                    - Wipe all data from the store");
+    println!("  help                     - Show this help message");
+    println!("  exit | quit              - Exit the REPL");
 }
 
 fn run_repl(store: &mut KvStore) {
     println!("Welcome to RustKV REPL!");
-    println!("Commands:");
-    println!("  set <key> <val> [ttl_secs]");
-    println!("  get <key>");
-    println!("  del <key>");
-    println!("  incr <key> <amount>");
-    println!("  decr <key> <amount>");
-    println!("  scan <prefix>");
-    println!("  range <start> <end>");
-    println!("  stats");
-    println!("  exit");
+    println!("Type 'help' to see available commands.");
     
     loop {
         print!("kv> ");
@@ -226,8 +236,13 @@ fn run_repl(store: &mut KvStore) {
             "stats" => {
                 println!("{:?}", store.stats());
             }
+            "clear" => {
+                store.clear().unwrap();
+                println!("OK");
+            }
+            "help" => print_help(),
             "exit" | "quit" => break,
-            _ => println!("Unknown command or wrong arguments"),
+            _ => println!("Unknown command or wrong arguments. Type 'help' for usage."),
         }
     }
 }
