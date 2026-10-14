@@ -144,6 +144,7 @@ fn print_help() {
     println!("Available Commands:");
     println!("  set <key> <val> [ttl_secs] - Store a value with optional TTL");
     println!("  get <key>                - Retrieve a value");
+    println!("  ttl <key>                - Get remaining TTL for a key");
     println!("  get-or-set <key> <val>   - Get value, or set to <val> if missing");
     println!("  del <key>                - Delete a value");
     println!("  incr <key> <amount>      - Increment a numeric value");
@@ -173,24 +174,28 @@ fn run_repl(store: &mut KvStore) {
         match parts[0] {
             "set" if parts.len() >= 3 => {
                 let key = parts[1];
-                let val = parts[2..].join(" ");
-                // If the last part is a digit, treat it as TTL
                 if let Some(last_part) = parts.last() {
                     if let Ok(ttl) = last_part.parse::<u64>() && parts.len() > 3 {
-                        // The value is everything between parts[2] and the last part
-                        let val_slice = &parts[2..parts.len()-1];
-                        let val = val_slice.join(" ");
+                        let val = parts[2..parts.len()-1].join(" ");
                         store.set_with_ttl(key, &val, Some(ttl)).unwrap();
                         println!("OK (ttl: {})", ttl);
                         continue;
                     }
                 }
+                let val = parts[2..].join(" ");
                 store.set(key, &val).unwrap();
                 println!("OK");
             }
             "get" if parts.len() >= 2 => {
                 match store.get(parts[1]) {
                     Some(val) => println!("\n{}", val),
+                    None => println!("(nil)"),
+                }
+            }
+            "ttl" if parts.len() >= 2 => {
+                match store.get_ttl(parts[1]) {
+                    Some(Some(t)) => println!("\nTTL: {}s", t),
+                    Some(None) => println!("\nNo TTL set"),
                     None => println!("(nil)"),
                 }
             }
@@ -223,7 +228,7 @@ fn run_repl(store: &mut KvStore) {
                 }
             }
             "scan" if parts.len() >= 2 => {
-                let results = store.scan(parts[1]);
+                let results = store.get_all_with_prefix(parts[1]);
                 if results.is_empty() {
                     println!("(empty)");
                 } else {
