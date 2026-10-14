@@ -144,6 +144,7 @@ fn print_help() {
     println!("Available Commands:");
     println!("  set <key> <val> [ttl_secs] - Store a value with optional TTL");
     println!("  get <key>                - Retrieve a value");
+    println!("  get-or-set <key> <val>   - Get value, or set to <val> if missing");
     println!("  del <key>                - Delete a value");
     println!("  incr <key> <amount>      - Increment a numeric value");
     println!("  decr <key> <amount>      - Decrement a numeric value");
@@ -191,6 +192,14 @@ fn run_repl(store: &mut KvStore) {
                 match store.get(parts[1]) {
                     Some(val) => println!("\n{}", val),
                     None => println!("(nil)"),
+                }
+            }
+            "get-or-set" if parts.len() >= 3 => {
+                let key = parts[1];
+                let val = parts[2..].join(" ");
+                match store.get_or_set(key, &val, None) {
+                    Ok(v) => println!("\n{}", v),
+                    Err(e) => println!("Error: {:?}", e),
                 }
             }
             "del" if parts.len() >= 2 => {
