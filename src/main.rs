@@ -138,7 +138,16 @@ fn run_demo(store: &mut KvStore) {
 
 fn run_repl(store: &mut KvStore) {
     println!("Welcome to RustKV REPL!");
-    println!("Commands: set <key> <val>, get <key>, del <key>, stats, exit");
+    println!("Commands:");
+    println!("  set <key> <val> [ttl_secs]");
+    println!("  get <key>");
+    println!("  del <key>");
+    println!("  incr <key> <amount>");
+    println!("  decr <key> <amount>");
+    println!("  scan <prefix>");
+    println!("  range <start> <end>");
+    println!("  stats");
+    println!("  exit");
     
     loop {
         print!("kv> ");
@@ -152,7 +161,20 @@ fn run_repl(store: &mut KvStore) {
 
         match parts[0] {
             "set" if parts.len() >= 3 => {
-                store.set(parts[1], parts[2..].join(" ")).unwrap();
+                let key = parts[1];
+                let val = parts[2..].join(" ");
+                // If the last part is a digit, treat it as TTL
+                if let Some(last_part) = parts.last() {
+                    if let Ok(ttl) = last_part.parse::<u64>() && parts.len() > 3 {
+                        // The value is everything between parts[2] and the last part
+                        let val_slice = &parts[2..parts.len()-1];
+                        let val = val_slice.join(" ");
+                        store.set_with_ttl(key, &val, Some(ttl)).unwrap();
+                        println!("OK (ttl: {})", ttl);
+                        continue;
+                    }
+                }
+                store.set(key, &val).unwrap();
                 println!("OK");
             }
             "get" if parts.len() >= 2 => {
@@ -164,6 +186,42 @@ fn run_repl(store: &mut KvStore) {
             "del" if parts.len() >= 2 => {
                 store.delete(parts[1]).unwrap();
                 println!("OK");
+            }
+            "incr" if parts.len() >= 3 => {
+                if let Ok(amount) = parts[2].parse::<i64>() {
+                    let res = store.incr(parts[1], amount).unwrap();
+                    println!("\n{}", res);
+                } else {
+                    println!("Invalid amount");
+                }
+            }
+            "decr" if parts.len() >= 3 => {
+                if let Ok(amount) = parts[2].parse::<i64>() {
+                    let res = store.decr(parts[1], amount).unwrap();
+                    println!("\n{}", res);
+                } else {
+                    println!("Invalid amount");
+                }
+            }
+            "scan" if parts.len() >= 2 => {
+                let results = store.scan(parts[1]);
+                if results.is_empty() {
+                    println!("(empty)");
+                } else {
+                    for (k, v) in results {
+                        println!("\n{}: {}", k, v);
+                    }
+                }
+            }
+            "range" if parts.len() >= 3 => {
+                let results = store.range(parts[1], parts[2]);
+                if results.is_empty() {
+                    println!("(empty)");
+                } else {
+                    for (k, v) in results {
+                        println!("\n{}: {}", k, v);
+                    }
+                }
             }
             "stats" => {
                 println!("{:?}", store.stats());
