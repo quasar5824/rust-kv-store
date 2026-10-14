@@ -4,6 +4,7 @@ mod store;
 mod tests;
 
 use store::{KvStore, Command};
+use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -47,10 +48,7 @@ fn run_benchmarks(store: &mut KvStore) {
     println!("-------------------------------------\n");
 }
 
-fn main() {
-    let path = "store.db";
-    let mut store = KvStore::open(path).expect("Failed to open store");
-
+fn run_demo(store: &mut KvStore) {
     let key1 = "user:1";
     let value1 = "Alice";
     let key2 = "user:2";
@@ -136,11 +134,63 @@ fn main() {
     println!("Exists {}: {}", "user:2", store.exists("user:2"));
 
     println!("\nStore Stats: {:?}", store.stats());
+}
 
-    run_benchmarks(&mut store);
+fn run_repl(store: &mut KvStore) {
+    println!("Welcome to RustKV REPL!");
+    println!("Commands: set <key> <val>, get <key>, del <key>, stats, exit");
+    
+    loop {
+        print!("kv> ");
+        io::stdout().flush().unwrap();
 
-    println!("\nClearing store...");
-    store.clear().expect("Failed to clear store");
-    println!("Store size after clear: {}", store.get_all_cloned().len());
-    println!("Store Stats after clear: {:?}", store.stats());
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        let parts: Vec<&str> = input.trim().split_whitespace().collect();
+
+        if parts.is_empty() { continue; }
+
+        match parts[0] {
+            "set" if parts.len() >= 3 => {
+                store.set(parts[1], parts[2..].join(" ")).unwrap();
+                println!("OK");
+            }
+            "get" if parts.len() >= 2 => {
+                match store.get(parts[1]) {
+                    Some(val) => println!("\n{}", val),
+                    None => println!("(nil)"),
+                }
+            }
+            "del" if parts.len() >= 2 => {
+                store.delete(parts[1]).unwrap();
+                println!("OK");
+            }
+            "stats" => {
+                println!("{:?}", store.stats());
+            }
+            "exit" | "quit" => break,
+            _ => println!("Unknown command or wrong arguments"),
+        }
+    }
+}
+
+fn main() {
+    let path = "store.db";
+    let mut store = KvStore::open(path).expect("Failed to open store");
+
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "--bench" => run_benchmarks(&mut store),
+            "--demo" => {
+                run_demo(&mut store);
+                run_benchmarks(&mut store);
+            }
+            "--repl" => run_repl(&mut store),
+            _ => println!("Usage: cargo run [--bench | --demo | --repl] (default: --demo)"),
+        }
+    } else {
+        run_demo(&mut store);
+        run_benchmarks(&mut store);
+    }
 }
