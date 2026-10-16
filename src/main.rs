@@ -153,6 +153,7 @@ fn print_help() {
     println!("  range <start> <end>     - Get keys in a range");
     println!("  count                    - Get total number of keys");
     println!("  stats                    - Show store statistics");
+    println!("  dump <file>              - Export store to JSON file");
     println!("  clear                    - Wipe all data from the store");
     println!("  help                     - Show this help message");
     println!("  exit | quit              - Exit the REPL");
@@ -254,13 +255,30 @@ fn run_repl(store: &mut KvStore) {
             "stats" => {
                 println!("{:?}", store.stats());
             }
+            "dump" if parts.len() >= 2 => {
+                let path = parts[1];
+                match store.get_all() {
+                    Ok(data) => {
+                        if let Ok(json) = serde_json::to_string_pretty(&data) {
+                            if std::fs::write(path, json).is_ok() {
+                                println!("OK");
+                            } else {
+                                println!("Error: Failed to write to file");
+                            }
+                        } else {
+                            println!("Error: Serialization failed");
+                        }
+                    }
+                    Err(e) => println!("Error: {:?}", e),
+                }
+            }
             "clear" => {
                 store.clear().unwrap();
                 println!("OK");
             }
             "help" => print_help(),
             "exit" | "quit" => break,
-            _ => println!("Unknown command or wrong arguments. Type 'help' for usage."),
+            _ => println!("Unknown command or wrong arguments. Type 'help' for usage"),
         }
     }
 }
