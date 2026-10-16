@@ -151,6 +151,7 @@ fn print_help() {
     println!("  decr <key> <amount>      - Decrement a numeric value");
     println!("  scan <prefix>            - Scan keys starting with prefix");
     println!("  range <start> <end>     - Get keys in a range");
+    println!("  keys                     - List all keys");
     println!("  count                    - Get total number of keys");
     println!("  stats                    - Show store statistics");
     println!("  dump <file>              - Export store to JSON file");
@@ -248,6 +249,14 @@ fn run_repl(store: &mut KvStore) {
                     for (k, v) in results {
                         println!("\n{}: {}", k, v);
                     }
+                }
+            }
+            "keys" => {
+                let keys: Vec<_> = store.cursor().map(|(k, _)| k).collect();
+                if keys.is_empty() {
+                    println!("(empty)");
+                } else {
+                    println!("\n{}", keys.join("\n"));
                 }
             }
             "count" => {
