@@ -158,6 +158,7 @@ fn print_help() {
     println!("  dump <file>              - Export store to JSON file");
     println!("  watch <key>              - Notify when the specified key changes");
     println!("  clear                    - Wipe all data from the store");
+    println!("  version                  - Show store version");
     println!("  help                     - Show this help message");
     println!("  exit | quit              - Exit the REPL");
 }
@@ -304,6 +305,9 @@ fn run_repl(store: &mut KvStore) {
             "clear" => {
                 store.clear().unwrap();
                 println!("OK");
+            }
+            "version" => {
+                println!("\nRustKV Store v0.1.0");
             }
             "help" => print_help(),
             "exit" | "quit" => break,
