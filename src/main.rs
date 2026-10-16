@@ -154,6 +154,7 @@ fn print_help() {
     println!("  count                    - Get total number of keys");
     println!("  stats                    - Show store statistics");
     println!("  dump <file>              - Export store to JSON file");
+    println!("  watch <key>              - Notify when the specified key changes");
     println!("  clear                    - Wipe all data from the store");
     println!("  help                     - Show this help message");
     println!("  exit | quit              - Exit the REPL");
@@ -271,6 +272,15 @@ fn run_repl(store: &mut KvStore) {
                     }
                     Err(e) => println!("Error: {:?}", e),
                 }
+            }
+            "watch" if parts.len() >= 2 => {
+                let key = parts[1].to_string();
+                store.add_observer(&key, move |k, event| {
+                    println!("\n[WATCH] Key '{}' changed: {:?}", k, event);
+                    print!("kv> ");
+                    io::stdout().flush().unwrap();
+                });
+                println!("OK watching {}", key);
             }
             "clear" => {
                 store.clear().unwrap();
