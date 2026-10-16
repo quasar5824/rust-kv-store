@@ -154,6 +154,7 @@ fn print_help() {
     println!("  keys                     - List all keys");
     println!("  count                    - Get total number of keys");
     println!("  stats                    - Show store statistics");
+    println!("  flush                    - Force write-ahead log to disk");
     println!("  dump <file>              - Export store to JSON file");
     println!("  watch <key>              - Notify when the specified key changes");
     println!("  clear                    - Wipe all data from the store");
@@ -263,7 +264,16 @@ fn run_repl(store: &mut KvStore) {
                 println!("\n{}", store.stats().key_count);
             }
             "stats" => {
-                println!("{:?}", store.stats());
+                let s = store.stats();
+                println!("\n--- Store Statistics ---");
+                println!("Keys: {}", s.key_count);
+                println!("Log Size: {} bytes", s.log_size);
+                println!("Operations: {}", s.ops_count);
+                println!("------------------------");
+            }
+            "flush" => {
+                store.flush().unwrap();
+                println!("OK");
             }
             "dump" if parts.len() >= 2 => {
                 let path = parts[1];
