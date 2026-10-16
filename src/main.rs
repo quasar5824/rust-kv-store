@@ -151,6 +151,7 @@ fn print_help() {
     println!("  decr <key> <amount>      - Decrement a numeric value");
     println!("  scan <prefix>            - Scan keys starting with prefix");
     println!("  range <start> <end>     - Get keys in a range");
+    println!("  count                    - Get total number of keys");
     println!("  stats                    - Show store statistics");
     println!("  clear                    - Wipe all data from the store");
     println!("  help                     - Show this help message");
@@ -246,6 +247,9 @@ fn run_repl(store: &mut KvStore) {
                         println!("\n{}: {}", k, v);
                     }
                 }
+            }
+            "count" => {
+                println!("\n{}", store.stats().key_count);
             }
             "stats" => {
                 println!("{:?}", store.stats());
