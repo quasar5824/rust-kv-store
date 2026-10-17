@@ -149,6 +149,8 @@ fn print_help() {
     println!("  del <key>                - Delete a value");
     println!("  incr <key> <amount>      - Increment a numeric value");
     println!("  decr <key> <amount>      - Decrement a numeric value");
+    println!("  incr-float <key> <amt>   - Increment a floating-point value");
+    println!("  decr-float <key> <amt>   - Decrement a floating-point value");
     println!("  scan <prefix>            - Scan keys starting with prefix");
     println!("  range <start> <end>     - Get keys in a range");
     println!("  keys                     - List all keys");
@@ -229,6 +231,22 @@ fn run_repl(store: &mut KvStore) {
             "decr" if parts.len() >= 3 => {
                 if let Ok(amount) = parts[2].parse::<i64>() {
                     let res = store.decr(parts[1], amount).unwrap();
+                    println!("\n{}", res);
+                } else {
+                    println!("Invalid amount");
+                }
+            }
+            "incr-float" if parts.len() >= 3 => {
+                if let Ok(amount) = parts[2].parse::<f64>() {
+                    let res = store.incr_float(parts[1], amount).unwrap();
+                    println!("\n{}", res);
+                } else {
+                    println!("Invalid amount");
+                }
+            }
+            "decr-float" if parts.len() >= 3 => {
+                if let Ok(amount) = parts[2].parse::<f64>() {
+                    let res = store.incr_float(parts[1], -amount).unwrap();
                     println!("\n{}", res);
                 } else {
                     println!("Invalid amount");
