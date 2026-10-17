@@ -303,8 +303,10 @@ fn run_repl(store: &mut KvStore) {
                 println!("OK watching {}", key);
             }
             "clear" => {
-                store.clear().unwrap();
-                println!("OK");
+                match store.clear() {
+                    Ok(_) => println!("OK"),
+                    Err(e) => println!("Error clearing store: {:?}", e),
+                }
             }
             "version" => {
                 println!("\nRustKV Store v0.1.0");
