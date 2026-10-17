@@ -154,6 +154,7 @@ fn print_help() {
     println!("  keys                     - List all keys");
     println!("  count                    - Get total number of keys");
     println!("  stats                    - Show store statistics");
+    println!("  info                     - Detailed store information");
     println!("  flush                    - Force write-ahead log to disk");
     println!("  dump <file>              - Export store to JSON file");
     println!("  watch <key>              - Notify when the specified key changes");
@@ -271,6 +272,18 @@ fn run_repl(store: &mut KvStore) {
                 println!("Log Size: {} bytes", s.log_size);
                 println!("Operations: {}", s.ops_count);
                 println!("------------------------");
+            }
+            "info" => {
+                let s = store.stats();
+                println!("\n--- RustKV Store Info ---");
+                println!("Version: 0.1.0");
+                println!("Role: Persistent Key-Value Store");
+                println!("Implementation: Write-Ahead Log (WAL)");
+                println!("\n[Current State]");
+                println!("  Total Keys: {}", s.key_count);
+                println!("  Log File Size: {} bytes", s.log_size);
+                println!("  Total Ops Since Start: {}", s.ops_count);
+                println!("--------------------------");
             }
             "flush" => {
                 store.flush().unwrap();
