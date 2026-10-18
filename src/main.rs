@@ -144,7 +144,9 @@ fn print_help() {
     println!("Available Commands:");
     println!("  set <key> <val> [ttl_secs] - Store a value with optional TTL");
     println!("  set-nx <key> <val>        - Set value only if key does not exist");
+    println!("  mset <k1> <v1> <k2> <v2>...- Set multiple key-value pairs");
     println!("  get <key>                - Retrieve a value");
+    println!("  mget <k1> <k2>...        - Retrieve multiple values");
     println!("  ttl <key>                - Get remaining TTL for a key");
     println!("  get-or-set <key> <val>   - Get value, or set to <val> if missing");
     println!("  del <key>                - Delete a value");
@@ -206,10 +208,26 @@ fn run_repl(store: &mut KvStore) {
                     Err(e) => println!("Error: {:?}", e),
                 }
             }
+            "mset" if parts.len() >= 3 && parts.len() % 2 == 1 => {
+                let mut pairs = Vec::new();
+                for i in (1..parts.len()).step_by(2) {
+                    pairs.push((parts[i].to_string(), parts[i+1].to_string()));
+                }
+                store.mset(pairs).unwrap();
+                println!("OK");
+            }
             "get" if parts.len() >= 2 => {
                 match store.get(parts[1]) {
                     Some(val) => println!("\n{}", val),
                     None => println!("(nil)"),
+                }
+            }
+            "mget" if parts.len() >= 2 => {
+                for key in &parts[1..] {
+                    match store.get(key) {
+                        Some(val) => println!("\n{}: {}", key, val),
+                        None => println!("\n{}: (nil)", key),
+                    }
                 }
             }
             "ttl" if parts.len() >= 2 => {
