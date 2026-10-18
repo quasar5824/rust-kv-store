@@ -143,6 +143,7 @@ fn run_demo(store: &mut KvStore) {
 fn print_help() {
     println!("Available Commands:");
     println!("  set <key> <val> [ttl_secs] - Store a value with optional TTL");
+    println!("  set-nx <key> <val>        - Set value only if key does not exist");
     println!("  get <key>                - Retrieve a value");
     println!("  ttl <key>                - Get remaining TTL for a key");
     println!("  get-or-set <key> <val>   - Get value, or set to <val> if missing");
@@ -195,6 +196,15 @@ fn run_repl(store: &mut KvStore) {
                 let val = parts[2..].join(" ");
                 store.set(key, &val).unwrap();
                 println!("OK");
+            }
+            "set-nx" if parts.len() >= 3 => {
+                let key = parts[1];
+                let val = parts[2..].join(" ");
+                match store.set_if_not_exists(key, &val, None) {
+                    Ok(true) => println!("OK"),
+                    Ok(false) => println!("(nil)"),
+                    Err(e) => println!("Error: {:?}", e),
+                }
             }
             "get" if parts.len() >= 2 => {
                 match store.get(parts[1]) {
