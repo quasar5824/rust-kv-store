@@ -162,6 +162,7 @@ fn print_help() {
     println!("  watch <key>              - Notify when the specified key changes");
     println!("  clear                    - Wipe all data from the store");
     println!("  version                  - Show store version");
+    println!("  ping                     - Test store connectivity");
     println!("  help                     - Show this help message");
     println!("  exit | quit              - Exit the REPL");
 }
@@ -341,6 +342,9 @@ fn run_repl(store: &mut KvStore) {
             }
             "version" => {
                 println!("\nRustKV Store v0.1.0");
+            }
+            "ping" => {
+                println!("PONG");
             }
             "help" => print_help(),
             "exit" | "quit" => break,
