@@ -147,9 +147,13 @@ fn print_help() {
     println!("  mset <k1> <v1> <k2> <v2>...- Set multiple key-value pairs");
     println!("  get <key>                - Retrieve a value");
     println!("  mget <k1> <k2>...        - Retrieve multiple values");
+    println!("  exists <key>             - Check whether a key exists");
     println!("  ttl <key>                - Get remaining TTL for a key");
+    println!("  expire <key> <secs>      - Set TTL for an existing key");
+    println!("  persist <key>            - Remove TTL from a key");
     println!("  get-or-set <key> <val>   - Get value, or set to <val> if missing");
     println!("  del <key>                - Delete a value");
+    println!("  update <key> <val>       - Update an existing key's value");
     println!("  incr <key> <amount>      - Increment a numeric value");
     println!("  decr <key> <amount>      - Decrement a numeric value");
     println!("  incr-float <key> <amt>   - Increment a floating-point value");
@@ -160,6 +164,8 @@ fn print_help() {
     println!("  count                    - Get total number of keys");
     println!("  stats                    - Show store statistics");
     println!("  info                     - Detailed store information");
+    println!("  backup <file>            - Export store snapshot to a file");
+    println!("  restore <file>           - Restore store from a snapshot file");
     println!("  flush                    - Force write-ahead log to disk");
     println!("  dump <file>              - Export store to JSON file");
     println!("  watch <key>              - Notify when the specified key changes");
@@ -187,13 +193,17 @@ fn run_repl(store: &mut KvStore) {
         match parts[0] {
             "set" if parts.len() >= 3 => {
                 let key = parts[1];
-                if let Some(last_part) = parts.last() {
-                    if let Ok(ttl) = last_part.parse::<u64>() && parts.len() > 3 {
-                        let val = parts[2..parts.len()-1].join(" ");
-                        store.set_with_ttl(key, &val, Some(ttl)).unwrap();
-                        println!("OK (ttl: {})", ttl);
-                        continue;
+                let mut ttl_parsed: Option<u64> = None;
+                if parts.len() > 3 {
+                    if let Ok(ttl) = parts.last().unwrap().parse::<u64>() {
+                        ttl_parsed = Some(ttl);
                     }
+                }
+                if let Some(ttl) = ttl_parsed {
+                    let val = parts[2..parts.len()-1].join(" ");
+                    store.set_with_ttl(key, &val, Some(ttl)).unwrap();
+                    println!("OK (ttl: {})", ttl);
+                    continue;
                 }
                 let val = parts[2..].join(" ");
                 store.set(key, &val).unwrap();
@@ -230,11 +240,32 @@ fn run_repl(store: &mut KvStore) {
                     }
                 }
             }
+            "exists" if parts.len() >= 2 => {
+                println!("{}", store.exists(parts[1]));
+            }
             "ttl" if parts.len() >= 2 => {
                 match store.get_ttl(parts[1]) {
                     Some(Some(t)) => println!("\nTTL: {}s", t),
                     Some(None) => println!("\nNo TTL set"),
                     None => println!("(nil)"),
+                }
+            }
+            "expire" if parts.len() >= 3 => {
+                if let Ok(ttl) = parts[2].parse::<u64>() {
+                    match store.expire(parts[1], Some(ttl)) {
+                        Ok(true) => println!("OK"),
+                        Ok(false) => println!("(nil)"),
+                        Err(e) => println!("Error: {:?}", e),
+                    }
+                } else {
+                    println!("Invalid ttl");
+                }
+            }
+            "persist" if parts.len() >= 2 => {
+                match store.expire(parts[1], None) {
+                    Ok(true) => println!("OK"),
+                    Ok(false) => println!("(nil)"),
+                    Err(e) => println!("Error: {:?}", e),
                 }
             }
             "get-or-set" if parts.len() >= 3 => {
@@ -248,6 +279,15 @@ fn run_repl(store: &mut KvStore) {
             "del" if parts.len() >= 2 => {
                 store.delete(parts[1]).unwrap();
                 println!("OK");
+            }
+            "update" if parts.len() >= 3 => {
+                let key = parts[1];
+                let val = parts[2..].join(" ");
+                match store.update(key, &val) {
+                    Ok(true) => println!("OK"),
+                    Ok(false) => println!("(nil)"),
+                    Err(e) => println!("Error: {:?}", e),
+                }
             }
             "incr" if parts.len() >= 3 => {
                 if let Ok(amount) = parts[2].parse::<i64>() {
@@ -336,6 +376,18 @@ fn run_repl(store: &mut KvStore) {
                 store.flush().unwrap();
                 println!("OK");
             }
+            "backup" if parts.len() >= 2 => {
+                match store.backup(parts[1]) {
+                    Ok(_) => println!("OK"),
+                    Err(e) => println!("Error: {:?}", e),
+                }
+            }
+            "restore" if parts.len() >= 2 => {
+                match store.restore(parts[1]) {
+                    Ok(_) => println!("OK"),
+                    Err(e) => println!("Error: {:?}", e),
+                }
+            }
             "dump" if parts.len() >= 2 => {
                 let path = parts[1];
                 match store.get_all() {
@@ -381,6 +433,11 @@ fn run_repl(store: &mut KvStore) {
     }
 }
 
+fn print_usage() {
+    println!("Usage: cargo run [--bench | --demo | --repl | --help]");
+    println!("  (default: --demo)");
+}
+
 fn main() {
     let path = "store.db";
     let mut store = KvStore::open(path).expect("Failed to open store");
@@ -394,7 +451,11 @@ fn main() {
                 run_benchmarks(&mut store);
             }
             "--repl" => run_repl(&mut store),
-            _ => println!("Usage: cargo run [--bench | --demo | --repl] (default: --demo)"),
+            "--help" | "-h" => print_usage(),
+            _ => {
+                println!("Unknown option: {}", args[1]);
+                print_usage();
+            }
         }
     } else {
         run_demo(&mut store);
