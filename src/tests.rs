@@ -1,4 +1,4 @@
-use crate::store::{KvStore, StoreEvent, AsyncKvStore, CachedKvStore};
+use crate::store::{KvStore, StoreEvent, AsyncKvStore, CachedKvStore, Command};
 use std::thread;
 use std::time::Duration;
 use std::fs;
@@ -310,4 +310,47 @@ fn test_cached_kv_hit_rate() {
     let (hits, misses) = cached.cache_stats();
     assert!(hits > 0);
     assert!(misses >= 0);
+}
+
+#[test]
+fn test_update_and_exists() {
+    let mut store = setup_store();
+    store.set("key", "val").unwrap();
+    assert!(store.exists("key"));
+    assert!(store.update("key", "val2").unwrap());
+    assert_eq!(store.get("key"), Some(&"val2".to_string()));
+    assert!(!store.update("missing", "x").unwrap());
+    assert!(!store.exists("missing"));
+}
+
+#[test]
+fn test_batch_command() {
+    let mut store = setup_store();
+    store.batch(vec![
+        Command::Set { key: "b1".to_string(), value: "v1".to_string(), ttl: None },
+        Command::Set { key: "b2".to_string(), value: "v2".to_string(), ttl: None },
+    ]).unwrap();
+    assert_eq!(store.get("b1"), Some(&"v1".to_string()));
+    assert_eq!(store.get("b2"), Some(&"v2".to_string()));
+}
+
+#[test]
+fn test_flush_get_all_cursor() {
+    let mut store = setup_store();
+    store.set("a", "1").unwrap();
+    store.set("b", "2").unwrap();
+    store.flush().unwrap();
+    let all = store.get_all().unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(store.cursor().count(), 2);
+}
+
+#[test]
+fn test_scan_prefix_method() {
+    let mut store = setup_store();
+    store.set("user:1", "A").unwrap();
+    store.set("user:2", "B").unwrap();
+    store.set("admin:1", "C").unwrap();
+    let scanned = store.scan("user:");
+    assert_eq!(scanned.len(), 2);
 }

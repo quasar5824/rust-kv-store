@@ -94,7 +94,7 @@ fn run_demo(store: &mut KvStore) {
         true // commit
     }).expect("Transaction failed");
 
-    println!("\nScanning for keys starting with 'user:':");
+    println!("\nScanning for keys starting with 'user:'");
     for (k, v) in store.scan("user:") {
         println!("  {}: {}", k, v);
     }
@@ -153,6 +153,12 @@ fn print_help() {
     println!("  persist <key>            - Remove TTL from a key");
     println!("  get-or-set <key> <val>   - Get value, or set to <val> if missing");
     println!("  del <key>                - Delete a value");
+    println!("  append <key> <val>       - Append value to an existing string");
+    println!("  strlen <key>             - Get string length");
+    println!("  getset <key> <val>       - Set value and return previous");
+    println!("  setex <key> <sec> <val>  - Set value with expiration");
+    println!("  rename <old> <new>       - Rename a key");
+    println!("  mdelete <k1> <k2>...    - Delete multiple keys");
     println!("  update <key> <val>       - Update an existing key's value");
     println!("  incr <key> <amount>      - Increment a numeric value");
     println!("  decr <key> <amount>      - Decrement a numeric value");
@@ -278,6 +284,57 @@ fn run_repl(store: &mut KvStore) {
             }
             "del" if parts.len() >= 2 => {
                 store.delete(parts[1]).unwrap();
+                println!("OK");
+            }
+            "append" if parts.len() >= 3 => {
+                let key = parts[1];
+                let value = parts[2..].join(" ");
+                let current = store.get(key).cloned().unwrap_or_default();
+                let new_value = format!("{}{}", current, value);
+                store.set(key, &new_value).unwrap();
+                println!("{}", new_value.len());
+            }
+            "strlen" if parts.len() >= 2 => {
+                match store.get(parts[1]) {
+                    Some(v) => println!("{}", v.len()),
+                    None => println!("0"),
+                }
+            }
+            "getset" if parts.len() >= 3 => {
+                let key = parts[1];
+                let value = parts[2..].join(" ");
+                let old = store.get(key).cloned();
+                store.set(key, &value).unwrap();
+                match old {
+                    Some(v) => println!("{}", v),
+                    None => println!("(nil)"),
+                }
+            }
+            "setex" if parts.len() >= 4 => {
+                if let Ok(ttl) = parts[2].parse::<u64>() {
+                    let key = parts[1];
+                    let value = parts[3..].join(" ");
+                    store.set_with_ttl(key, &value, Some(ttl)).unwrap();
+                    println!("OK");
+                } else {
+                    println!("Invalid ttl");
+                }
+            }
+            "rename" if parts.len() == 3 => {
+                let old_key = parts[1];
+                let new_key = parts[2];
+                if let Some(value) = store.get(old_key).cloned() {
+                    store.set(new_key, &value).unwrap();
+                    store.delete(old_key).unwrap();
+                    println!("OK");
+                } else {
+                    println!("(nil)");
+                }
+            }
+            "mdelete" if parts.len() >= 2 => {
+                for key in &parts[1..] {
+                    store.delete(key).unwrap();
+                }
                 println!("OK");
             }
             "update" if parts.len() >= 3 => {
