@@ -182,6 +182,16 @@ fn print_help() {
     println!("  exit | quit              - Exit the REPL");
 }
 
+fn same_store_path(candidate: &str, store_path: &str) -> bool {
+    if candidate == store_path {
+        return true;
+    }
+    match (std::fs::canonicalize(candidate), std::fs::canonicalize(store_path)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
 fn run_repl(store: &mut KvStore) {
     println!("Welcome to RustKV REPL!");
     println!("Type 'help' to see available commands.");
@@ -191,7 +201,17 @@ fn run_repl(store: &mut KvStore) {
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
+        match io::stdin().read_line(&mut input) {
+            Ok(0) => {
+                println!();
+                break;
+            }
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("Error reading input: {}", error);
+                break;
+            }
+        }
         let parts: Vec<&str> = input.trim().split_whitespace().collect();
 
         if parts.is_empty() { continue; }
@@ -207,13 +227,17 @@ fn run_repl(store: &mut KvStore) {
                 }
                 if let Some(ttl) = ttl_parsed {
                     let val = parts[2..parts.len()-1].join(" ");
-                    store.set_with_ttl(key, &val, Some(ttl)).unwrap();
-                    println!("OK (ttl: {})", ttl);
-                    continue;
+                    match store.set_with_ttl(key, &val, Some(ttl)) {
+                        Ok(_) => println!("OK (ttl: {})", ttl),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
+                } else {
+                    let val = parts[2..].join(" ");
+                    match store.set(key, &val) {
+                        Ok(_) => println!("OK"),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 }
-                let val = parts[2..].join(" ");
-                store.set(key, &val).unwrap();
-                println!("OK");
             }
             "set-nx" if parts.len() >= 3 => {
                 let key = parts[1];
@@ -229,8 +253,10 @@ fn run_repl(store: &mut KvStore) {
                 for i in (1..parts.len()).step_by(2) {
                     pairs.push((parts[i].to_string(), parts[i+1].to_string()));
                 }
-                store.mset(pairs).unwrap();
-                println!("OK");
+                match store.mset(pairs) {
+                    Ok(_) => println!("OK"),
+                    Err(error) => println!("Error: {:?}", error),
+                }
             }
             "get" if parts.len() >= 2 => {
                 match store.get(parts[1]) {
@@ -283,16 +309,20 @@ fn run_repl(store: &mut KvStore) {
                 }
             }
             "del" if parts.len() >= 2 => {
-                store.delete(parts[1]).unwrap();
-                println!("OK");
+                match store.delete(parts[1]) {
+                    Ok(_) => println!("OK"),
+                    Err(error) => println!("Error: {:?}", error),
+                }
             }
             "append" if parts.len() >= 3 => {
                 let key = parts[1];
                 let value = parts[2..].join(" ");
                 let current = store.get(key).cloned().unwrap_or_default();
                 let new_value = format!("{}{}", current, value);
-                store.set(key, &new_value).unwrap();
-                println!("{}", new_value.len());
+                match store.set(key, &new_value) {
+                    Ok(_) => println!("{}", new_value.len()),
+                    Err(error) => println!("Error: {:?}", error),
+                }
             }
             "strlen" if parts.len() >= 2 => {
                 match store.get(parts[1]) {
@@ -304,18 +334,28 @@ fn run_repl(store: &mut KvStore) {
                 let key = parts[1];
                 let value = parts[2..].join(" ");
                 let old = store.get(key).cloned();
-                store.set(key, &value).unwrap();
-                match old {
-                    Some(v) => println!("{}", v),
-                    None => println!("(nil)"),
+                let ttl = store.get_ttl(key);
+                match store.set(key, &value) {
+                    Ok(_) => {
+                        if let Some(Some(ttl_seconds)) = ttl {
+                            let _ = store.expire(key, Some(ttl_seconds));
+                        }
+                        match old {
+                            Some(previous) => println!("{}", previous),
+                            None => println!("(nil)"),
+                        }
+                    }
+                    Err(error) => println!("Error: {:?}", error),
                 }
             }
             "setex" if parts.len() >= 4 => {
                 if let Ok(ttl) = parts[2].parse::<u64>() {
                     let key = parts[1];
                     let value = parts[3..].join(" ");
-                    store.set_with_ttl(key, &value, Some(ttl)).unwrap();
-                    println!("OK");
+                    match store.set_with_ttl(key, &value, Some(ttl)) {
+                        Ok(_) => println!("OK"),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 } else {
                     println!("Invalid ttl");
                 }
@@ -324,22 +364,43 @@ fn run_repl(store: &mut KvStore) {
                 let old_key = parts[1];
                 let new_key = parts[2];
                 if old_key == new_key {
-                    println!("OK");
+                    if store.exists(old_key) {
+                        println!("OK");
+                    } else {
+                        println!("(nil)");
+                    }
                     continue;
                 }
-                if let Some(value) = store.get(old_key).cloned() {
-                    store.set(new_key, &value).unwrap();
-                    store.delete(old_key).unwrap();
-                    println!("OK");
-                } else {
-                    println!("(nil)");
+                match store.get(old_key).cloned() {
+                    Some(value) => {
+                        let ttl = store.get_ttl(old_key);
+                        match store.set(new_key, &value) {
+                            Ok(_) => {
+                                if let Some(Some(ttl_seconds)) = ttl {
+                                    let _ = store.expire(new_key, Some(ttl_seconds));
+                                }
+                                match store.delete(old_key) {
+                                    Ok(_) => println!("OK"),
+                                    Err(error) => println!("Error: {:?}", error),
+                                }
+                            }
+                            Err(error) => println!("Error: {:?}", error),
+                        }
+                    }
+                    None => println!("(nil)"),
                 }
             }
             "mdelete" if parts.len() >= 2 => {
+                let mut failed = false;
                 for key in &parts[1..] {
-                    store.delete(key).unwrap();
+                    if let Err(error) = store.delete(key) {
+                        println!("Error: {:?}", error);
+                        failed = true;
+                    }
                 }
-                println!("OK");
+                if !failed {
+                    println!("OK");
+                }
             }
             "update" if parts.len() >= 3 => {
                 let key = parts[1];
@@ -352,32 +413,40 @@ fn run_repl(store: &mut KvStore) {
             }
             "incr" if parts.len() >= 3 => {
                 if let Ok(amount) = parts[2].parse::<i64>() {
-                    let res = store.incr(parts[1], amount).unwrap();
-                    println!("\n{}", res);
+                    match store.incr(parts[1], amount) {
+                        Ok(result) => println!("\n{}", result),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 } else {
                     println!("Invalid amount");
                 }
             }
             "decr" if parts.len() >= 3 => {
                 if let Ok(amount) = parts[2].parse::<i64>() {
-                    let res = store.decr(parts[1], amount).unwrap();
-                    println!("\n{}", res);
+                    match store.decr(parts[1], amount) {
+                        Ok(result) => println!("\n{}", result),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 } else {
                     println!("Invalid amount");
                 }
             }
             "incr-float" if parts.len() >= 3 => {
                 if let Ok(amount) = parts[2].parse::<f64>() {
-                    let res = store.incr_float(parts[1], amount).unwrap();
-                    println!("\n{}", res);
+                    match store.incr_float(parts[1], amount) {
+                        Ok(result) => println!("\n{}", result),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 } else {
                     println!("Invalid amount");
                 }
             }
             "decr-float" if parts.len() >= 3 => {
                 if let Ok(amount) = parts[2].parse::<f64>() {
-                    let res = store.incr_float(parts[1], -amount).unwrap();
-                    println!("\n{}", res);
+                    match store.incr_float(parts[1], -amount) {
+                        Ok(result) => println!("\n{}", result),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 } else {
                     println!("Invalid amount");
                 }
@@ -434,36 +503,50 @@ fn run_repl(store: &mut KvStore) {
                 println!("--------------------------");
             }
             "flush" => {
-                store.flush().unwrap();
-                println!("OK");
+                match store.flush() {
+                    Ok(_) => println!("OK"),
+                    Err(error) => println!("Error: {:?}", error),
+                }
             }
             "backup" if parts.len() >= 2 => {
-                match store.backup(parts[1]) {
-                    Ok(_) => println!("OK"),
-                    Err(e) => println!("Error: {:?}", e),
+                if same_store_path(parts[1], "store.db") {
+                    println!("Error: backup path must not be the open store file");
+                } else {
+                    match store.backup(parts[1]) {
+                        Ok(_) => println!("OK"),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 }
             }
             "restore" if parts.len() >= 2 => {
-                match store.restore(parts[1]) {
-                    Ok(_) => println!("OK"),
-                    Err(e) => println!("Error: {:?}", e),
+                if same_store_path(parts[1], "store.db") {
+                    println!("Error: restore path must not be the open store file");
+                } else {
+                    match store.restore(parts[1]) {
+                        Ok(_) => println!("OK"),
+                        Err(error) => println!("Error: {:?}", error),
+                    }
                 }
             }
             "dump" if parts.len() >= 2 => {
                 let path = parts[1];
-                match store.get_all() {
-                    Ok(data) => {
-                        if let Ok(json) = serde_json::to_string_pretty(&data) {
-                            if std::fs::write(path, json).is_ok() {
-                                println!("OK");
+                if same_store_path(path, "store.db") {
+                    println!("Error: dump path must not be the open store file");
+                } else {
+                    match store.get_all() {
+                        Ok(data) => {
+                            if let Ok(json) = serde_json::to_string_pretty(&data) {
+                                if std::fs::write(path, json).is_ok() {
+                                    println!("OK");
+                                } else {
+                                    println!("Error: Failed to write to file");
+                                }
                             } else {
-                                println!("Error: Failed to write to file");
+                                println!("Error: Serialization failed");
                             }
-                        } else {
-                            println!("Error: Serialization failed");
                         }
+                        Err(error) => println!("Error: {:?}", error),
                     }
-                    Err(e) => println!("Error: {:?}", e),
                 }
             }
             "watch" if parts.len() >= 2 => {
