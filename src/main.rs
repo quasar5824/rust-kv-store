@@ -192,7 +192,7 @@ fn same_store_path(candidate: &str, store_path: &str) -> bool {
     }
 }
 
-fn run_repl(store: &mut KvStore) {
+fn run_repl(store: &mut KvStore, store_path: &str) {
     println!("Welcome to RustKV REPL!");
     println!("Type 'help' to see available commands.");
     
@@ -509,7 +509,7 @@ fn run_repl(store: &mut KvStore) {
                 }
             }
             "backup" if parts.len() >= 2 => {
-                if same_store_path(parts[1], "store.db") {
+                if same_store_path(parts[1], store_path) {
                     println!("Error: backup path must not be the open store file");
                 } else {
                     match store.backup(parts[1]) {
@@ -519,7 +519,7 @@ fn run_repl(store: &mut KvStore) {
                 }
             }
             "restore" if parts.len() >= 2 => {
-                if same_store_path(parts[1], "store.db") {
+                if same_store_path(parts[1], store_path) {
                     println!("Error: restore path must not be the open store file");
                 } else {
                     match store.restore(parts[1]) {
@@ -530,7 +530,7 @@ fn run_repl(store: &mut KvStore) {
             }
             "dump" if parts.len() >= 2 => {
                 let path = parts[1];
-                if same_store_path(path, "store.db") {
+                if same_store_path(path, store_path) {
                     println!("Error: dump path must not be the open store file");
                 } else {
                     match store.get_all() {
@@ -597,8 +597,9 @@ fn main() {
             }
             "--repl" => {
                 let path = args.get(2).cloned().unwrap_or_else(|| "store.db".to_string());
+                let store_path = path.clone();
                 let mut store = KvStore::open(&path).expect("Failed to open store");
-                run_repl(&mut store);
+                run_repl(&mut store, &store_path);
             }
             "--help" | "-h" => print_usage(),
             _ => {
