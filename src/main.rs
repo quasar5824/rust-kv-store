@@ -323,6 +323,10 @@ fn run_repl(store: &mut KvStore) {
             "rename" if parts.len() == 3 => {
                 let old_key = parts[1];
                 let new_key = parts[2];
+                if old_key == new_key {
+                    println!("OK");
+                    continue;
+                }
                 if let Some(value) = store.get(old_key).cloned() {
                     store.set(new_key, &value).unwrap();
                     store.delete(old_key).unwrap();
@@ -491,23 +495,28 @@ fn run_repl(store: &mut KvStore) {
 }
 
 fn print_usage() {
-    println!("Usage: cargo run [--bench | --demo | --repl | --help]");
+    println!("Usage: cargo run [--bench | --demo | --repl [path] | --help]");
     println!("  (default: --demo)");
 }
 
 fn main() {
-    let path = "store.db";
-    let mut store = KvStore::open(path).expect("Failed to open store");
-
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         match args[1].as_str() {
-            "--bench" => run_benchmarks(&mut store),
+            "--bench" => {
+                let mut store = KvStore::open("demo.db").expect("Failed to open store");
+                run_benchmarks(&mut store);
+            }
             "--demo" => {
+                let mut store = KvStore::open("demo.db").expect("Failed to open store");
                 run_demo(&mut store);
                 run_benchmarks(&mut store);
             }
-            "--repl" => run_repl(&mut store),
+            "--repl" => {
+                let path = args.get(2).cloned().unwrap_or_else(|| "store.db".to_string());
+                let mut store = KvStore::open(&path).expect("Failed to open store");
+                run_repl(&mut store);
+            }
             "--help" | "-h" => print_usage(),
             _ => {
                 println!("Unknown option: {}", args[1]);
@@ -515,6 +524,7 @@ fn main() {
             }
         }
     } else {
+        let mut store = KvStore::open("demo.db").expect("Failed to open store");
         run_demo(&mut store);
         run_benchmarks(&mut store);
     }
