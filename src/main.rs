@@ -5,6 +5,7 @@ mod tests;
 
 use store::{KvStore, Command};
 use std::io::{self, Write};
+use std::path::{Component, Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -173,6 +174,7 @@ fn print_help() {
     println!("  backup <file>            - Export store snapshot to a file");
     println!("  restore <file>           - Restore store from a snapshot file");
     println!("  flush                    - Force write-ahead log to disk");
+    println!("  compact                  - Compact the write-ahead log");
     println!("  dump <file>              - Export store to JSON file");
     println!("  watch <key>              - Notify when the specified key changes");
     println!("  clear                    - Wipe all data from the store");
@@ -182,14 +184,33 @@ fn print_help() {
     println!("  exit | quit              - Exit the REPL");
 }
 
+fn normalize_store_path(path: &str) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(normalized.components().next_back(), Some(Component::Normal(_))) {
+                    normalized.pop();
+                } else {
+                    normalized.push("..");
+                }
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
 fn same_store_path(candidate: &str, store_path: &str) -> bool {
     if candidate == store_path {
         return true;
     }
     match (std::fs::canonicalize(candidate), std::fs::canonicalize(store_path)) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => false,
+        (Ok(left), Ok(right)) => return left == right,
+        _ => {}
     }
+    normalize_store_path(candidate) == normalize_store_path(store_path)
 }
 
 fn run_repl(store: &mut KvStore, store_path: &str) {
@@ -510,6 +531,12 @@ fn run_repl(store: &mut KvStore, store_path: &str) {
             }
             "flush" => {
                 match store.flush() {
+                    Ok(_) => println!("OK"),
+                    Err(error) => println!("Error: {:?}", error),
+                }
+            }
+            "compact" => {
+                match store.compact() {
                     Ok(_) => println!("OK"),
                     Err(error) => println!("Error: {:?}", error),
                 }
