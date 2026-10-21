@@ -319,8 +319,14 @@ fn run_repl(store: &mut KvStore, store_path: &str) {
                 let value = parts[2..].join(" ");
                 let current = store.get(key).cloned().unwrap_or_default();
                 let new_value = format!("{}{}", current, value);
+                let ttl = store.get_ttl(key);
                 match store.set(key, &new_value) {
-                    Ok(_) => println!("{}", new_value.len()),
+                    Ok(_) => {
+                        if let Some(Some(ttl_seconds)) = ttl {
+                            let _ = store.expire(key, Some(ttl_seconds));
+                        }
+                        println!("{}", new_value.len());
+                    }
                     Err(error) => println!("Error: {:?}", error),
                 }
             }
