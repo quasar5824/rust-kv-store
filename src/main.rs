@@ -184,7 +184,7 @@ fn print_help() {
     println!("  exit | quit              - Exit the REPL");
 }
 
-fn normalize_store_path(path: &str) -> PathBuf {
+pub fn normalize_store_path(path: &str) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in Path::new(path).components() {
         match component {
@@ -202,14 +202,32 @@ fn normalize_store_path(path: &str) -> PathBuf {
     normalized
 }
 
-fn same_store_path(candidate: &str, store_path: &str) -> bool {
+fn comparable_store_path(path: &str) -> Option<PathBuf> {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return Some(canonical);
+    }
+
+    let path = Path::new(path);
+    let file_name = path.file_name()?;
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let canonical_parent = if parent.as_os_str().is_empty() {
+        std::fs::canonicalize(".").ok()?
+    } else {
+        std::fs::canonicalize(parent).ok()?
+    };
+    Some(canonical_parent.join(file_name))
+}
+
+pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
     if candidate == store_path {
         return true;
     }
-    match (std::fs::canonicalize(candidate), std::fs::canonicalize(store_path)) {
-        (Ok(left), Ok(right)) => return left == right,
+
+    match (comparable_store_path(candidate), comparable_store_path(store_path)) {
+        (Some(left), Some(right)) => return left == right,
         _ => {}
     }
+
     normalize_store_path(candidate) == normalize_store_path(store_path)
 }
 

@@ -54,3 +54,15 @@ fn same_store_path_normalizes_existing_lexical_aliases() {
 
     let _ = std::fs::remove_file(file);
 }
+
+#[test]
+fn normalize_store_path_collapses_current_and_parent_components() {
+    assert_eq!(
+        normalize_store_path("a/./b/../c"),
+        std::path::PathBuf::from("a/c")
+    );
+    assert_eq!(
+        normalize_store_path("./missing.db"),
+        std::path::PathBuf::from("missing.db")
+    );
+}
