@@ -185,26 +185,24 @@ fn print_help() {
 }
 
 pub fn normalize_store_path(path: &str) -> PathBuf {
-    let mut normalized = PathBuf::new();
+    let mut stack: Vec<Component> = Vec::new();
     for component in Path::new(path).components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if matches!(normalized.components().next_back(), Some(Component::Normal(_))) {
-                    normalized.pop();
-                } else {
-                    let last = normalized.components().next_back();
-                    // Never emit a stray parent segment above a filesystem root/prefix.
-                    if !matches!(last, Some(Component::RootDir) | Some(Component::Prefix(_))) {
-                        normalized.push("..");
-                    }
+            Component::ParentDir => match stack.last() {
+                Some(Component::Normal(_)) => {
+                    stack.pop();
                 }
-            }
-            Component::RootDir | Component::Prefix(_) => {
-                normalized.push(component.as_os_str());
-            }
-            _ => normalized.push(component.as_os_str()),
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                _ => stack.push(component),
+            },
+            _ => stack.push(component),
         }
+    }
+
+    let mut normalized = PathBuf::new();
+    for component in stack {
+        normalized.push(component.as_os_str());
     }
     normalized
 }
@@ -216,9 +214,6 @@ fn comparable_store_path(path: &str) -> Option<PathBuf> {
         return Some(canonical);
     }
 
-    // Resolve through the deepest existing ancestor so that lexical aliases
-    // (e.g. "a/../b") and paths with missing intermediate components still
-    // compare by their canonical location.
     for ancestor in normalized.ancestors() {
         let probe = if ancestor.as_os_str().is_empty() {
             Path::new(".")
@@ -231,11 +226,10 @@ fn comparable_store_path(path: &str) -> Option<PathBuf> {
                     return Some(canonical_ancestor.join(relative));
                 }
             }
-            break;
         }
     }
 
-    None
+    Some(normalized)
 }
 
 pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
