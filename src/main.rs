@@ -208,13 +208,52 @@ pub fn normalize_store_path(path: &str) -> PathBuf {
 }
 
 fn comparable_store_path(path: &str) -> Option<PathBuf> {
-    let normalized = normalize_store_path(path);
+    let mut resolved = PathBuf::new();
 
-    if let Ok(canonical) = std::fs::canonicalize(&normalized) {
-        return Some(canonical);
+    for component in Path::new(path).components() {
+        match component {
+            Component::Prefix(prefix) => {
+                resolved.push(prefix.as_os_str());
+            }
+            Component::RootDir => {
+                resolved.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let last_is_normal =
+                    matches!(resolved.components().last(), Some(Component::Normal(_)));
+                let last_is_root_or_prefix = matches!(
+                    resolved.components().last(),
+                    Some(Component::RootDir) | Some(Component::Prefix(_))
+                );
+
+                if last_is_normal {
+                    resolved.pop();
+                } else if last_is_root_or_prefix {
+                    // A root or drive prefix cannot be escaped by '..'.
+                } else {
+                    resolved.push(component.as_os_str());
+                }
+            }
+            Component::Normal(_) => {
+                resolved.push(component.as_os_str());
+                if resolved.exists() {
+                    if let Ok(canonical) = std::fs::canonicalize(&resolved) {
+                        resolved = canonical;
+                    }
+                }
+            }
+        }
     }
 
-    for ancestor in normalized.ancestors() {
+    if resolved.exists() {
+        if let Ok(canonical) = std::fs::canonicalize(&resolved) {
+            return Some(canonical);
+        }
+        return Some(resolved);
+    }
+
+    for ancestor in resolved.ancestors() {
         let probe = if ancestor.as_os_str().is_empty() {
             Path::new(".")
         } else {
@@ -222,14 +261,14 @@ fn comparable_store_path(path: &str) -> Option<PathBuf> {
         };
         if probe.exists() {
             if let Ok(canonical_ancestor) = std::fs::canonicalize(probe) {
-                if let Ok(relative) = normalized.strip_prefix(ancestor) {
+                if let Ok(relative) = resolved.strip_prefix(ancestor) {
                     return Some(canonical_ancestor.join(relative));
                 }
             }
         }
     }
 
-    Some(normalized)
+    Some(resolved)
 }
 
 pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
