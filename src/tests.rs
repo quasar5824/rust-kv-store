@@ -56,6 +56,31 @@ fn same_store_path_normalizes_existing_lexical_aliases() {
 }
 
 #[test]
+fn same_store_path_resolves_aliases_through_existing_parents() {
+    let dir = std::env::temp_dir().join("rust_kv_store_parents");
+    let existing = dir.join("existing");
+    std::fs::create_dir_all(&existing).unwrap();
+    let file = existing.join("store.db");
+    std::fs::write(&file, b"").unwrap();
+
+    let alias = existing.join("nested").join("..").join("store.db");
+    assert!(same_store_path(
+        alias.to_str().unwrap(),
+        file.to_str().unwrap()
+    ));
+
+    let missing = existing.join("missing.db");
+    let missing_alias = existing.join("x").join("..").join("missing.db");
+    assert!(same_store_path(
+        missing_alias.to_str().unwrap(),
+        missing.to_str().unwrap()
+    ));
+
+    let _ = std::fs::remove_file(file);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn normalize_store_path_collapses_current_and_parent_components() {
     assert_eq!(
         normalize_store_path("a/./b/../c"),
@@ -64,5 +89,13 @@ fn normalize_store_path_collapses_current_and_parent_components() {
     assert_eq!(
         normalize_store_path("./missing.db"),
         std::path::PathBuf::from("missing.db")
+    );
+}
+
+#[test]
+fn normalize_store_path_keeps_parent_segments_outside_root() {
+    assert_eq!(
+        normalize_store_path("/../a"),
+        std::path::PathBuf::from("/a")
     );
 }

@@ -193,8 +193,15 @@ pub fn normalize_store_path(path: &str) -> PathBuf {
                 if matches!(normalized.components().next_back(), Some(Component::Normal(_))) {
                     normalized.pop();
                 } else {
-                    normalized.push("..");
+                    let last = normalized.components().next_back();
+                    // Never emit a stray parent segment above a filesystem root/prefix.
+                    if !matches!(last, Some(Component::RootDir) | Some(Component::Prefix(_))) {
+                        normalized.push("..");
+                    }
                 }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                normalized.push(component.as_os_str());
             }
             _ => normalized.push(component.as_os_str()),
         }
@@ -203,19 +210,32 @@ pub fn normalize_store_path(path: &str) -> PathBuf {
 }
 
 fn comparable_store_path(path: &str) -> Option<PathBuf> {
-    if let Ok(canonical) = std::fs::canonicalize(path) {
+    let normalized = normalize_store_path(path);
+
+    if let Ok(canonical) = std::fs::canonicalize(&normalized) {
         return Some(canonical);
     }
 
-    let path = Path::new(path);
-    let file_name = path.file_name()?;
-    let parent = path.parent().unwrap_or_else(|| Path::new(""));
-    let canonical_parent = if parent.as_os_str().is_empty() {
-        std::fs::canonicalize(".").ok()?
-    } else {
-        std::fs::canonicalize(parent).ok()?
-    };
-    Some(canonical_parent.join(file_name))
+    // Resolve through the deepest existing ancestor so that lexical aliases
+    // (e.g. "a/../b") and paths with missing intermediate components still
+    // compare by their canonical location.
+    for ancestor in normalized.ancestors() {
+        let probe = if ancestor.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            ancestor
+        };
+        if probe.exists() {
+            if let Ok(canonical_ancestor) = std::fs::canonicalize(probe) {
+                if let Ok(relative) = normalized.strip_prefix(ancestor) {
+                    return Some(canonical_ancestor.join(relative));
+                }
+            }
+            break;
+        }
+    }
+
+    None
 }
 
 pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
