@@ -268,7 +268,7 @@ fn comparable_store_path(path: &str) -> Option<PathBuf> {
         }
     }
 
-    Some(resolved)
+    Some(normalize_store_path(path))
 }
 
 pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
