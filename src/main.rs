@@ -261,6 +261,9 @@ fn comparable_store_path(path: &str) -> Option<PathBuf> {
         };
         if probe.exists() {
             if let Ok(canonical_ancestor) = std::fs::canonicalize(probe) {
+                if ancestor.as_os_str().is_empty() {
+                    return Some(canonical_ancestor.join(&resolved));
+                }
                 if let Ok(relative) = resolved.strip_prefix(ancestor) {
                     return Some(canonical_ancestor.join(relative));
                 }
