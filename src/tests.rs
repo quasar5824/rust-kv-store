@@ -99,3 +99,69 @@ fn normalize_store_path_keeps_parent_segments_outside_root() {
         std::path::PathBuf::from("/a")
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn same_store_path_resolves_symlinked_prefix() {
+    let dir = std::env::temp_dir().join("rust_kv_store_symlink_prefix");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let real = dir.join("real");
+    std::fs::create_dir_all(&real).unwrap();
+    let link = dir.join("link");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    let left = link.join("missing.db");
+    let right = real.join("missing.db");
+    assert!(same_store_path(
+        left.to_str().unwrap(),
+        right.to_str().unwrap()
+    ));
+
+    let other = dir.join("other").join("missing.db");
+    assert!(!same_store_path(
+        left.to_str().unwrap(),
+        other.to_str().unwrap()
+    ));
+
+    let traversal = link.join("nested").join("..").join("missing.db");
+    assert!(same_store_path(
+        traversal.to_str().unwrap(),
+        right.to_str().unwrap()
+    ));
+
+    let _ = std::fs::remove_file(&link);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn same_store_path_resolves_symlinked_file() {
+    let dir = std::env::temp_dir().join("rust_kv_store_symlink_file");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let real = dir.join("real.db");
+    std::fs::write(&real, b"").unwrap();
+    let link = dir.join("link.db");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    assert!(same_store_path(
+        link.to_str().unwrap(),
+        real.to_str().unwrap()
+    ));
+
+    let _ = std::fs::remove_file(&link);
+    let _ = std::fs::remove_file(&real);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn same_store_path_handles_empty_path_alias() {
+    assert!(same_store_path("", "."));
+    assert!(same_store_path("", "./"));
+    assert!(!same_store_path("", "missing.db"));
+}
