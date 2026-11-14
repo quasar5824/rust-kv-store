@@ -207,7 +207,7 @@ pub fn normalize_store_path(path: &str) -> PathBuf {
     normalized
 }
 
-fn comparable_store_path(path: &str) -> Option<PathBuf> {
+pub fn comparable_store_path(path: &str) -> Option<PathBuf> {
     let mut resolved = PathBuf::new();
 
     for component in Path::new(path).components() {
@@ -250,7 +250,7 @@ fn comparable_store_path(path: &str) -> Option<PathBuf> {
         if let Ok(canonical) = std::fs::canonicalize(&resolved) {
             return Some(canonical);
         }
-        return Some(resolved);
+        return Some(normalize_store_path(&resolved.to_string_lossy()));
     }
 
     for ancestor in resolved.ancestors() {
@@ -262,10 +262,14 @@ fn comparable_store_path(path: &str) -> Option<PathBuf> {
         if probe.exists() {
             if let Ok(canonical_ancestor) = std::fs::canonicalize(probe) {
                 if ancestor.as_os_str().is_empty() {
-                    return Some(canonical_ancestor.join(&resolved));
+                    return Some(normalize_store_path(
+                        &canonical_ancestor.join(&resolved).to_string_lossy(),
+                    ));
                 }
                 if let Ok(relative) = resolved.strip_prefix(ancestor) {
-                    return Some(canonical_ancestor.join(relative));
+                    return Some(normalize_store_path(
+                        &canonical_ancestor.join(relative).to_string_lossy(),
+                    ));
                 }
             }
         }
