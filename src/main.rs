@@ -208,6 +208,10 @@ pub fn normalize_store_path(path: &str) -> PathBuf {
 }
 
 pub fn comparable_store_path(path: &str) -> Option<PathBuf> {
+    if path.is_empty() {
+        return std::fs::canonicalize(".").ok().or_else(|| Some(PathBuf::from(".")));
+    }
+
     let mut resolved = PathBuf::new();
 
     for component in Path::new(path).components() {

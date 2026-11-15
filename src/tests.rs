@@ -165,3 +165,9 @@ fn same_store_path_handles_empty_path_alias() {
     assert!(same_store_path("", "./"));
     assert!(!same_store_path("", "missing.db"));
 }
+
+#[test]
+fn comparable_store_path_empty_uses_current_directory() {
+    let current = std::fs::canonicalize(".").unwrap();
+    assert_eq!(comparable_store_path(""), Some(current));
+}
