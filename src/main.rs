@@ -263,23 +263,44 @@ pub fn comparable_store_path(path: &str) -> Option<PathBuf> {
         } else {
             ancestor
         };
-        if probe.exists() {
-            if let Ok(canonical_ancestor) = std::fs::canonicalize(probe) {
-                if ancestor.as_os_str().is_empty() {
-                    return Some(normalize_store_path(
-                        &canonical_ancestor.join(&resolved).to_string_lossy(),
-                    ));
-                }
-                if let Ok(relative) = resolved.strip_prefix(ancestor) {
-                    return Some(normalize_store_path(
-                        &canonical_ancestor.join(relative).to_string_lossy(),
-                    ));
-                }
-            }
+        if !probe.exists() {
+            continue;
         }
+        let Ok(canonical_ancestor) = std::fs::canonicalize(probe) else {
+            continue;
+        };
+
+        let suffix = if ancestor.as_os_str().is_empty() {
+            resolved.clone()
+        } else {
+            match resolved.strip_prefix(ancestor) {
+                Ok(relative) => relative.to_path_buf(),
+                Err(_) => continue,
+            }
+        };
+
+        return Some(normalize_store_path(
+            &canonical_ancestor.join(suffix).to_string_lossy(),
+        ));
     }
 
     Some(normalize_store_path(path))
+}
+
+#[cfg(unix)]
+fn same_file_identity(left: &Path, right: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(left), std::fs::metadata(right)) {
+        (Ok(left_meta), Ok(right_meta)) => {
+            left_meta.dev() == right_meta.dev() && left_meta.ino() == right_meta.ino()
+        }
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn same_file_identity(_left: &Path, _right: &Path) -> bool {
+    false
 }
 
 pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
@@ -288,8 +309,16 @@ pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
     }
 
     match (comparable_store_path(candidate), comparable_store_path(store_path)) {
-        (Some(left), Some(right)) => return left == right,
+        (Some(left), Some(right)) if left == right => return true,
         _ => {}
+    }
+
+    let candidate_path = Path::new(candidate);
+    let store_path_buf = Path::new(store_path);
+    if candidate_path.exists() && store_path_buf.exists() {
+        if same_file_identity(candidate_path, store_path_buf) {
+            return true;
+        }
     }
 
     normalize_store_path(candidate) == normalize_store_path(store_path)
