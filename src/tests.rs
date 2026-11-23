@@ -171,3 +171,17 @@ fn comparable_store_path_empty_uses_current_directory() {
     let current = std::fs::canonicalize(".").unwrap();
     assert_eq!(comparable_store_path(""), Some(current));
 }
+
+#[test]
+fn normalize_store_path_empty_and_dot_use_current_directory() {
+    assert_eq!(normalize_store_path(""), std::path::PathBuf::from("."));
+    assert_eq!(normalize_store_path("."), std::path::PathBuf::from("."));
+    assert_eq!(normalize_store_path("./"), std::path::PathBuf::from("."));
+}
+
+#[test]
+fn comparable_store_path_dot_uses_current_directory() {
+    let current = std::fs::canonicalize(".").unwrap();
+    assert_eq!(comparable_store_path("."), Some(current.clone()));
+    assert_eq!(comparable_store_path("./"), Some(current));
+}

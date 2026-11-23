@@ -204,6 +204,9 @@ pub fn normalize_store_path(path: &str) -> PathBuf {
     for component in stack {
         normalized.push(component.as_os_str());
     }
+    if normalized.as_os_str().is_empty() {
+        normalized = PathBuf::from(".");
+    }
     normalized
 }
 
