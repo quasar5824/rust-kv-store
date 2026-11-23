@@ -250,6 +250,10 @@ pub fn comparable_store_path(path: &str) -> Option<PathBuf> {
         }
     }
 
+    if resolved.as_os_str().is_empty() {
+        resolved = PathBuf::from(".");
+    }
+
     if resolved.exists() {
         if let Ok(canonical) = std::fs::canonicalize(&resolved) {
             return Some(canonical);
@@ -284,7 +288,7 @@ pub fn comparable_store_path(path: &str) -> Option<PathBuf> {
         ));
     }
 
-    Some(normalize_store_path(path))
+    Some(normalize_store_path(&resolved.to_string_lossy()))
 }
 
 #[cfg(unix)]
