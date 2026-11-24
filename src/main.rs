@@ -291,7 +291,8 @@ pub fn comparable_store_path(path: &str) -> Option<PathBuf> {
         ));
     }
 
-    Some(normalize_store_path(&resolved.to_string_lossy()))
+    let base = std::fs::canonicalize(".").unwrap_or_else(|_| PathBuf::from("."));
+    Some(normalize_store_path(&base.join(&resolved).to_string_lossy()))
 }
 
 #[cfg(unix)]

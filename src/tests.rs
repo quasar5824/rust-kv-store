@@ -185,3 +185,21 @@ fn comparable_store_path_dot_uses_current_directory() {
     assert_eq!(comparable_store_path("."), Some(current.clone()));
     assert_eq!(comparable_store_path("./"), Some(current));
 }
+
+#[test]
+fn comparable_store_path_missing_relative_is_anchored_to_current_directory() {
+    let current = std::fs::canonicalize(".").unwrap();
+    assert_eq!(
+        comparable_store_path("missing.db"),
+        Some(normalize_store_path(&current.join("missing.db").to_string_lossy()))
+    );
+}
+
+#[test]
+fn comparable_store_path_parent_relative_is_anchored_to_parent_directory() {
+    let parent = std::fs::canonicalize("..").unwrap_or_else(|_| std::path::PathBuf::from("."));
+    assert_eq!(
+        comparable_store_path("../missing.db"),
+        Some(normalize_store_path(&parent.join("missing.db").to_string_lossy()))
+    );
+}
