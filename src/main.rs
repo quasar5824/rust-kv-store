@@ -261,7 +261,6 @@ pub fn comparable_store_path(path: &str) -> Option<PathBuf> {
         if let Ok(canonical) = std::fs::canonicalize(&resolved) {
             return Some(canonical);
         }
-        return Some(normalize_store_path(&resolved.to_string_lossy()));
     }
 
     for ancestor in resolved.ancestors() {
