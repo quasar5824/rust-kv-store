@@ -328,7 +328,10 @@ pub fn same_store_path(candidate: &str, store_path: &str) -> bool {
         }
     }
 
-    normalize_store_path(candidate) == normalize_store_path(store_path)
+    // Comparable resolution already accounts for existing ancestors and symlinks.
+    // Lexical normalization is intentionally not used as a fallback here because
+    // it can collapse paths that traverse symlinked components differently.
+    false
 }
 
 fn run_repl(store: &mut KvStore, store_path: &str) {
